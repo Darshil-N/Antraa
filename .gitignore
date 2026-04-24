@@ -61,3 +61,13 @@ Desktop.ini
 .vscode/
 .idea/
 .history/
+
+# Data files (Exclude raw/synthetic CSV and Parquet but retain configs)
+*.csv
+*.parquet
+
+# Important Exceptions
+!package.json
+!package-lock.json
+!components.json
+!tsconfig.json

@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="logo.png" alt="FairSynth Logo" width="300"/>
-  <h1>FairSynth AI</h1>
+  <img src="frontend/public/logo.png" alt="Antraa Logo" width="300"/>
+  <h1>Antraa</h1>
   <p><strong>Local, Privacy-First Synthetic Data Generation with Multi-Agent Compliance Intelligence</strong></p>
   <p>
     <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white"/>

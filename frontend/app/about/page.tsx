@@ -20,8 +20,8 @@ export default function AboutPage() {
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
       <section className="rounded-xl border border-border bg-card p-7 shadow-sm">
         <h1 className="text-3xl font-semibold text-foreground">Methodology</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-secondary-foreground">
-          This frontend mirrors the documented FairSynth workflow: a compliance-centric synthetic data pipeline with an
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-foreground">
+          This frontend mirrors the documented Antraa workflow: a compliance-centric synthetic data pipeline with an
           optional standalone bias audit path. The UI is structured for regulated teams that need transparency at every
           decision point.
         </p>
@@ -34,7 +34,7 @@ export default function AboutPage() {
               <CardTitle className="text-xl">{section.title}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-6 text-secondary-foreground">{section.body}</p>
+              <p className="text-sm leading-6 text-foreground">{section.body}</p>
             </CardContent>
           </Card>
         ))}

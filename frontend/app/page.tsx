@@ -52,23 +52,19 @@ const stats = [
 ]
 
 export default function Home() {
-  const [showIntro, setShowIntro] = useState(() => {
-    if (typeof window === "undefined") {
-      return true
-    }
-    return window.sessionStorage.getItem(introSeenKey) !== "true"
-  })
+  const [showIntro, setShowIntro] = useState(true)
   const [activeCard, setActiveCard] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!showIntro) {
+    const seen = window.sessionStorage.getItem(introSeenKey) === "true"
+    if (seen) {
       setShowIntro(false)
       return
     }
     const timer = window.setTimeout(() => setShowIntro(false), splashDuration)
     window.sessionStorage.setItem(introSeenKey, "true")
     return () => window.clearTimeout(timer)
-  }, [showIntro])
+  }, [])
 
   return (
     <main className="relative mx-auto w-full max-w-7xl px-4 py-8 lg:px-8 lg:py-10">
@@ -90,11 +86,11 @@ export default function Home() {
               transition={{ duration: 0.36, ease: "easeOut" }}
             >
               <motion.div
-                className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-[#0081A7]/20 bg-white/70 shadow-[0_22px_60px_rgba(0,129,167,0.18)] backdrop-blur-xl"
+                className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-[#0081A7]/20 bg-white/70 shadow-[0_22px_60px_rgba(0,129,167,0.18)] backdrop-blur-xl overflow-hidden p-3"
                 animate={{ scale: [1, 1.03, 1] }}
                 transition={{ duration: 1.1, repeat: 1, ease: "easeInOut" }}
               >
-                <Sparkles className="h-10 w-10 text-[#0081A7]" />
+                <img src="/logo.png" alt="Antraa Logo" className="w-full h-full object-contain" />
               </motion.div>
               <motion.h1
                 className="text-6xl font-semibold tracking-[0.18em] text-[#0081A7] md:text-8xl"

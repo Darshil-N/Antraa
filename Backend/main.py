@@ -517,7 +517,7 @@ def generate_certificate(job_id: str, summary: Dict[str, Any], output_dir: Path,
         
         # Header
         c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, y, "FairSynth Compliance Certificate")
+        c.drawString(50, y, "Antraa Compliance Certificate")
         y -= 30
         
         c.setFont("Helvetica", 10)
@@ -679,7 +679,7 @@ def generate_certificate(job_id: str, summary: Dict[str, Any], output_dir: Path,
         print(f"PDF Gen Error: {e}")
         txt_path = output_dir / "compliance_certificate.txt"
         txt = (
-            "FairSynth Compliance Certificate\n"
+            "Antraa Compliance Certificate\n"
             f"Job ID: {job_id}\n"
             f"Generated At: {now_iso()}\n"
             f"Summary: {json.dumps(summary, default=json_default)}\n"
@@ -1049,7 +1049,7 @@ async def run_core_pipeline(job_id: str) -> None:
                 "privacy_risk_score":     quality.get("privacy_risk_score", 0.0),
             },
             "ai_narrative": ai_narrative or {},
-            "note": "FairSynth AI pipeline execution record — full compliance audit trail",
+            "note": "Antraa AI pipeline execution record — full compliance audit trail",
         }
         audit_path = outputs_dir / "audit_trail.json"
         dump_json(audit_path, audit_trail)
@@ -1303,7 +1303,7 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
         dump_json(findings_json, {"audit_id": audit_id, "findings": findings})
 
         report_lines = [
-            "FairSynth Bias Audit Report",
+            "Antraa Bias Audit Report",
             f"Audit ID: {audit_id}",
             f"Generated At: {now_iso()}",
             f"Source File: {input_file.name}",
@@ -1342,7 +1342,7 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
         await asyncio.to_thread(cleanup_bias_input_file, input_file)
 
 
-app = FastAPI(title="FairSynth Backend", version="1.0.0")
+app = FastAPI(title="Antraa Backend", version="1.0.0")
 
 # Allow the test frontend (file:// or localhost:*) to connect during dev
 app.add_middleware(
@@ -1927,7 +1927,7 @@ async def start_finetune(job_id: str, req: FinetuneRequest) -> Dict[str, Any]:
     1. A domain-aware system prompt (auto-generated from dataset columns)
     2. The synthetic dataset rows as context examples
 
-    Then runs `ollama create fairsynth-{job_id} -f {modelfile}` in the background.
+    Then runs `ollama create Antraa-{job_id} -f {modelfile}` in the background.
     """
     synth_path = JOBS_DIR / job_id / "outputs" / "synthetic_data.csv"
     if not synth_path.exists():
@@ -1937,7 +1937,7 @@ async def start_finetune(job_id: str, req: FinetuneRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=409, detail="Fine-tuning already in progress for this job")
 
     df = pd.read_csv(synth_path)
-    model_name = f"fairsynth-{job_id[:8]}"
+    model_name = f"Antraa-{job_id[:8]}"
 
     # Build system prompt
     col_names = ", ".join(df.columns.tolist())
@@ -2058,5 +2058,5 @@ async def chat_with_model(job_id: str, req: ChatMessage) -> Dict[str, Any]:
 
 @app.get("/")
 async def root() -> Dict[str, str]:
-    return {"service": "FairSynth Backend", "status": "ok", "docs": "/docs"}
+    return {"service": "Antraa Backend", "status": "ok", "docs": "/docs"}
 

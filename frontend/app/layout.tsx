@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 const jetBrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" })
 
 export const metadata: Metadata = {
-  title: "FairSynth AI",
+  title: "Antraa",
   description: "Privacy-first synthetic data and bias audit workflow",
   generator: "v0.dev",
 }
