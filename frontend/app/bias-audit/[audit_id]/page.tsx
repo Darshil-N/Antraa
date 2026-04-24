@@ -102,7 +102,7 @@ export default function BiasAuditPage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Bias Audit Monitor</h1>
-          <p className="text-sm text-secondary-foreground">Audit ID: {params.audit_id}</p>
+          <p className="text-sm text-foreground">Audit ID: {params.audit_id}</p>
         </div>
       </div>
 
@@ -134,7 +134,7 @@ export default function BiasAuditPage() {
             <CardContent>
               <div className="h-[200px] space-y-2 overflow-auto rounded-md border border-border bg-secondary/35 p-4">
                 {logs.map((log, index) => (
-                  <p key={index} className="font-mono text-xs text-secondary-foreground">
+                  <p key={index} className="font-mono text-xs text-foreground">
                     {log.time} - {log.msg}
                   </p>
                 ))}
@@ -171,10 +171,10 @@ export default function BiasAuditPage() {
                           {item.protected_attribute_column} ➔ {item.outcome_column}
                         </span>
                       </div>
-                      <p className="text-sm text-secondary-foreground mb-2">
+                      <p className="text-sm text-foreground mb-2">
                         {item.metric_name}: <span className="font-semibold text-foreground">{item.metric_value?.toFixed(4) || item.metric_value}</span>
                       </p>
-                      <div className="mt-2 text-sm leading-6 text-secondary-foreground bg-[#1e1e1e] p-3 rounded border border-border/50">
+                      <div className="mt-2 text-sm leading-6 text-foreground bg-[#1e1e1e] p-3 rounded border border-border/50">
                         {item.interpreter_narration}
                       </div>
                     </div>
@@ -193,7 +193,7 @@ export default function BiasAuditPage() {
               <CardTitle className="text-secondary">Protected Attribute Confirmation</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-secondary-foreground mb-4">
+              <p className="text-sm text-foreground mb-4">
                 The Profiler Agent has analyzed the dataset and identified the following potential protected attributes and outcome variables. Review and confirm before metrics are calculated.
               </p>
               

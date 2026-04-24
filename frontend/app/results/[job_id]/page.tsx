@@ -111,7 +111,7 @@ export default function ResultsPage() {
                   <XAxis dataKey="name" stroke="#888" tick={{ fontSize: 12 }} />
                   <YAxis type="number" domain={[0, 100]} stroke="#888" />
                   <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
-                  <Area type="monotone" dataKey="score" stroke="#0081A7" fill="#0081A7" fillOpacity={0.3} />
+                  <Area type="monotone" dataKey="score" stroke="#0081A7" fill="#0081A7" fillOpacity={0.3} dot={{ r: 4, strokeWidth: 2, fill: "#1e1e1e" }} activeDot={{ r: 6, fill: "#0081A7" }} />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -128,17 +128,23 @@ export default function ResultsPage() {
             <div className="grid grid-cols-2 h-full gap-4">
               {epsChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={epsChartData} layout="vertical" margin={{ left: 40, right: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#444" />
-                    <XAxis type="number" stroke="#888" />
-                    <YAxis dataKey="name" type="category" stroke="#888" width={100} tick={{ fontSize: 12 }} />
-                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} cursor={{fill: 'transparent'}} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                  <PieChart>
+                    <Pie 
+                      data={epsChartData} 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={60} 
+                      outerRadius={80} 
+                      paddingAngle={5} 
+                      dataKey="value"
+                    >
                       {epsChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
-                    </Bar>
-                  </BarChart>
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} itemStyle={{ color: '#fff' }} />
+                    <Legend />
+                  </PieChart>
                 </ResponsiveContainer>
               ) : (
                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No budget data</div>

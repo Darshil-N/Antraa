@@ -51,12 +51,12 @@ function BiasAuditEntryContent() {
           <CardTitle className="text-2xl">Bias Audit</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-secondary-foreground">
+          <p className="text-sm text-foreground">
             Run a standalone fairness audit on a new dataset or on previous synthetic output.
           </p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <label className="rounded-lg border border-border bg-card p-4 text-sm text-secondary-foreground">
+            <label className="rounded-lg border border-border bg-card p-4 text-sm text-foreground">
               <input
                 type="radio"
                 name="source"
@@ -66,7 +66,7 @@ function BiasAuditEntryContent() {
               />
               Upload fresh dataset
             </label>
-            <label className="rounded-lg border border-border bg-card p-4 text-sm text-secondary-foreground">
+            <label className="rounded-lg border border-border bg-card p-4 text-sm text-foreground">
               <input
                 type="radio"
                 name="source"
@@ -83,7 +83,7 @@ function BiasAuditEntryContent() {
               <input
                 type="file"
                 accept=".csv,.parquet"
-                className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground"
+                className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-foreground"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
               />
             ) : (
@@ -91,7 +91,7 @@ function BiasAuditEntryContent() {
                 <label className="block text-sm font-medium text-foreground mb-2">Source Job ID</label>
                 <input 
                   type="text" 
-                  className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground"
+                  className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground"
                   placeholder="e.g. 1234-abcd..."
                   value={jobIdInput}
                   onChange={(e) => setJobIdInput(e.target.value)}

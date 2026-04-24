@@ -200,17 +200,18 @@ export default function PatternAnalysisPage() {
             <p className="text-gray-800 dark:text-gray-200"><b>Overview:</b> <span className="text-gray-600 dark:text-gray-400">{data.original_narrative?.overall_summary}</span></p>
             <p className="text-gray-800 dark:text-gray-200"><b>Correlations:</b> <span className="text-gray-600 dark:text-gray-400">{data.original_narrative?.correlation_highlights}</span></p>
             {distData && (
-              <div className="h-[250px] w-full mt-4">
+              <div className="h-[250px] w-full mt-4 bg-card rounded-xl p-2 border border-border">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <text x="50%" y="10%" textAnchor="middle" dominantBaseline="middle" fill="#888" className="text-sm font-semibold">Distribution: {distData.column}</text>
-                    <Pie data={distData.original} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value">
+                    <text x="50%" y="45%" textAnchor="middle" dominantBaseline="middle" fill="#0081A7" className="text-xl font-bold">{distData.column}</text>
+                    <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" fill="#888" className="text-xs uppercase tracking-widest font-semibold">Original</text>
+                    <Pie data={distData.original} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={5} dataKey="value">
                       {distData.original.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#ffc658'][index % 6]} />
+                        <Cell key={`cell-${index}`} fill={['#0081A7', '#00AFB9', '#FED9B7', '#F07167', '#006A8A', '#4A4A4A'][index % 6]} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
-                    <Legend verticalAlign="bottom" height={36} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#0081A7", borderRadius: "8px" }} itemStyle={{ color: '#fff' }} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -226,17 +227,18 @@ export default function PatternAnalysisPage() {
             <p className="text-gray-800 dark:text-gray-200"><b>Overview:</b> <span className="text-gray-600 dark:text-gray-400">{data.synthetic_narrative?.overall_summary}</span></p>
             <p className="text-gray-800 dark:text-gray-200"><b>Correlations:</b> <span className="text-gray-600 dark:text-gray-400">{data.synthetic_narrative?.correlation_highlights}</span></p>
             {distData && (
-              <div className="h-[250px] w-full mt-4">
+              <div className="h-[250px] w-full mt-4 bg-card rounded-xl p-2 border border-border">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <text x="50%" y="10%" textAnchor="middle" dominantBaseline="middle" fill="#888" className="text-sm font-semibold">Distribution: {distData.column}</text>
-                    <Pie data={distData.synthetic} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value">
+                    <text x="50%" y="45%" textAnchor="middle" dominantBaseline="middle" fill="#00AFB9" className="text-xl font-bold">{distData.column}</text>
+                    <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" fill="#888" className="text-xs uppercase tracking-widest font-semibold">Synthetic</text>
+                    <Pie data={distData.synthetic} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={5} dataKey="value">
                       {distData.synthetic.map((entry: any, index: number) => (
-                        <Cell key={`cell-${index}`} fill={['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#ffc658'][index % 6]} />
+                        <Cell key={`cell-${index}`} fill={['#0081A7', '#00AFB9', '#FED9B7', '#F07167', '#006A8A', '#4A4A4A'][index % 6]} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
-                    <Legend verticalAlign="bottom" height={36} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#00AFB9", borderRadius: "8px" }} itemStyle={{ color: '#fff' }} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
