@@ -330,10 +330,14 @@ def run_synthesis(
         except Exception as restore_err:
             log.warning(f"  Could not restore dtype for {col} → {orig_dtype}: {restore_err}")
 
-    # ── Step 9b: Restore continuous integer columns ───────────────────────────
-    # Columns NOT in discrete_columns are passed through DP-CTGAN as floats.
-    # If the original was integer-typed (age, years_experience, etc.) the GAN
-    # outputs floats like 22.259. Round and cast them back.
+
+    # ── Step 10: Clamp to domain bounds (prevents impossible values) ─────────
+    log.info("Applying domain bounds clamping...")
+    df_synthetic = _clamp_to_bounds(df_synthetic, real_bounds, log)
+
+    # ── Step 10b: Restore continuous integer columns ──────────────────────────
+    # Clamping can cast integers back to floats because bounds are floats.
+    # Ensure continuous integers round back to whole numbers here.
     for col, orig_dtype in all_original_dtypes.items():
         if col in original_dtypes:  # Already handled in Step 9
             continue
@@ -350,10 +354,6 @@ def run_synthesis(
                 log.info(f"  Rounded continuous int column: {col} ({orig_dtype})")
             except Exception as round_err:
                 log.warning(f"  Could not round {col} to {orig_dtype}: {round_err}")
-
-    # ── Step 10: Clamp to domain bounds (prevents impossible values) ─────────
-    log.info("Applying domain bounds clamping...")
-    df_synthetic = _clamp_to_bounds(df_synthetic, real_bounds, log)
 
     # ── Step 11: Add PSEUDONYMIZED columns (Faker) ───────────────────────────
     for col in masked_cols:
