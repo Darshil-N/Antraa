@@ -94,15 +94,25 @@ _USER_PROMPT = """Column to classify:
   Domain: {domain}
   Sample values: {samples}
   Data type: {dtype}
+  Value range: {value_range}
 
 Relevant compliance rules from knowledge base:
 {rules_text}
 
 Determine the required compliance action for this column.
+
+For epsilon_budget calibration (ONLY when action is RETAIN_WITH_NOISE):
+  - The value range above tells you how wide the data is (e.g., salary $34K–$428K = range of $394K)
+  - Laplace DP noise std dev = range / epsilon. To limit noise to ~10% of range, use epsilon ≥ 10.
+  - Binary columns (0/1) with range=1: use epsilon ≥ 5.0 to avoid flipping values.
+  - Narrow ordinals (1-5 rank): use epsilon = 2.0–5.0.
+  - Wide continuous (salary, score): use epsilon = 3.0–10.0.
+  - If action is not RETAIN_WITH_NOISE, set epsilon_budget to 1.0 (unused).
+
 Return JSON:
 {{
   "action": "SUPPRESS" | "MASK" | "GENERALIZE" | "RETAIN_WITH_NOISE" | "RETAIN",
-  "epsilon_budget": 1.0, 
+  "epsilon_budget": <float 1.0-10.0>,
   "regulation_id": "<rule ID from above e.g. HIPAA-SH-04>",
   "citation": "<exact citation e.g. §164.514(b)(2)(i)(D)>",
   "regulation_name": "<full regulation name>",
@@ -129,7 +139,8 @@ def _extract_json(text: str) -> Optional[dict]:
 
 
 def _call_llm(col_name: str, sensitivity: str, domain: str,
-              samples: list, dtype: str, rules_text: str) -> Optional[dict]:
+              samples: list, dtype: str, rules_text: str,
+              value_range: str = "Unknown") -> Optional[dict]:
     try:
         client = ollama.Client(host=settings.ollama_base_url)
         response = client.chat(
@@ -142,11 +153,12 @@ def _call_llm(col_name: str, sensitivity: str, domain: str,
                     domain=domain,
                     samples=", ".join(str(v) for v in samples[:5]),
                     dtype=dtype,
+                    value_range=value_range,
                     rules_text=rules_text,
                 )},
             ],
             format="json",
-            options={"temperature": 0.05, "num_ctx": 3000},
+            options={"temperature": 0.05, "num_ctx": 3500},
         )
         return _extract_json(response["message"]["content"])
     except Exception:
@@ -192,6 +204,16 @@ def run_compliance_agent(job_id: str, profiler_output: ProfilerOutput,
         samples = col_info.get("sample_values", [])
         dtype = col_info.get("dtype", "object")
 
+        # ── Build value range string for epsilon calibration ─────────────────
+        stats = col_info.get("stats", {})
+        if stats and "min" in stats and "max" in stats:
+            col_min = stats["min"]
+            col_max = stats["max"]
+            col_range = col_max - col_min
+            value_range = f"min={col_min}, max={col_max}, range={round(col_range, 2)}"
+        else:
+            value_range = f"unique_values={col_info.get('unique_values', 'Unknown')}"
+
         # ── SAFE columns skip RAG entirely ──────────────────────────────────
         if sensitivity == SensitivityClass.SAFE:
             plan[col_name] = _FALLBACK_RULES[SensitivityClass.SAFE]
@@ -199,10 +221,12 @@ def run_compliance_agent(job_id: str, profiler_output: ProfilerOutput,
             continue
 
         # ── Query ChromaDB for relevant rules ────────────────────────────────
-        query = f"Column: {col_name}. Values: {', '.join(str(v) for v in samples[:3])}. Domain: {domain}. Sensitivity: {sensitivity.value}"
-        log.info(f"  Querying ChromaDB for: {col_name} ({sensitivity.value}, {domain})...")
+        query = (
+            f"Column: {col_name}. Values: {', '.join(str(v) for v in samples[:3])}. "
+            f"Domain: {domain}. Sensitivity: {sensitivity.value}. {value_range}"
+        )
+        log.info(f"  Querying ChromaDB for: {col_name} ({sensitivity.value}, {domain}, {value_range})...")
 
-        # Use FAIRNESS category only for bias-related sensitive columns
         rag_category = "PRIVACY"
         retrieved_chunks = query_collection(query, n_results=3, category_filter=rag_category)
 
@@ -216,7 +240,8 @@ def run_compliance_agent(job_id: str, profiler_output: ProfilerOutput,
         # ── Call LLM with retrieved rules (3 retries) ────────────────────────
         entry = None
         for attempt in range(1, 4):
-            raw = _call_llm(col_name, sensitivity.value, domain, samples, dtype, rules_text)
+            raw = _call_llm(col_name, sensitivity.value, domain, samples, dtype,
+                            rules_text, value_range=value_range)
             if raw:
                 try:
                     entry = CompliancePlanEntry(**raw)

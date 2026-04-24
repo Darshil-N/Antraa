@@ -95,6 +95,11 @@
             <div style="margin-bottom:10px;">
                 <label>Rows to synthesize: <input type="number" id="synth-rows" value="1000" style="width:150px;"></label>
             </div>
+            <div style="background:#1a3a1a; border:1px solid #4caf50; border-radius:4px; padding:10px; margin-bottom:12px; font-size:0.85em;">
+                <b style="color:#4caf50;">ℹ️ How Epsilon (ε) Works:</b> Each slider sets the per-column privacy budget.
+                The DP-CTGAN model trains with a <b>global ε = maximum of all RETAIN_WITH_NOISE column epsilons.</b>
+                Lower = stronger privacy. Range 0.5–3.0 = strong. 3.0–10.0 = moderate. Binary columns (0/1) need ε ≥ 5.0 to avoid value corruption.
+            </div>
             <div style="overflow-x: auto;">
                 <table id="approval-table">
                     <thead>
@@ -104,7 +109,7 @@
                             <th>Inferred Type</th>
                             <th>Suggested Action</th>
                             <th>Override Action</th>
-                            <th>Epsilon (DP)</th>
+                            <th>Epsilon (ε) — per-column budget</th>
                             <th>Approve</th>
                         </tr>
                     </thead>
@@ -336,12 +341,45 @@
         const riskScore = ((q.privacy_risk_score||0)*100).toFixed(1);
         let riskLabel = "Low (ε > 10)";
         if (riskScore >= 70) riskLabel = "High (No DP applied)";
-        else if (riskScore >= 30) riskLabel = "Moderate (ε=1.0 Balanced)";
-        else if (riskScore > 0) riskLabel = "Strong (ε < 1.0 Privacy-First)";
+        else if (riskScore >= 30) riskLabel = "Moderate (ε balanced)";
+        else if (riskScore > 0) riskLabel = "Strong (ε privacy-first)";
+
+        const epsSummary = q.epsilon_summary || {};
+        const globalEps = epsSummary.global_epsilon || epsSummary.total_budget || 'N/A';
+        const perColEps = epsSummary.per_column || {};
+        const perColHtml = Object.entries(perColEps).length > 0
+            ? Object.entries(perColEps).map(([col, eps]) =>
+                `<span style="margin-right:8px; background:#333; padding:2px 6px; border-radius:4px;"><b>${col}</b>: ε=${eps}</span>`
+              ).join('')
+            : '<em>No DP columns</em>';
+
+        const ksScores = q.ks_test_scores || {};
+        const ksHtml = Object.keys(ksScores).length > 0
+            ? Object.entries(ksScores).map(([col, score]) => {
+                const pct = (score * 100).toFixed(1);
+                const color = score < 0.70 ? '#ff5252' : score < 0.85 ? '#ff9800' : '#4caf50';
+                return `<div style="display:inline-block; margin:3px; background:#333; padding:3px 8px; border-radius:4px; border-left:3px solid ${color}"><b>${col}</b>: ${pct}%</div>`;
+              }).join('')
+            : '<em>No KS scores</em>';
         
         document.getElementById('core-quality').innerHTML = `
-            <p>Overall Quality: <b>${((q.overall_quality_score||0)*100).toFixed(1)}%</b></p>
-            <p>Privacy Risk Score: <b>${riskScore}%</b> <span style="font-size:0.9em; color:#aaa">(${riskLabel})</span></p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                <div style="background:#252525; padding:10px; border-radius:4px;">
+                    <div style="font-size:0.8em; color:#aaa;">Overall Quality (KS)</div>
+                    <div style="font-size:1.8em; font-weight:bold; color:${(q.overall_quality_score||0)>=0.8?'#4caf50':'#ff9800'}">${((q.overall_quality_score||0)*100).toFixed(1)}%</div>
+                </div>
+                <div style="background:#252525; padding:10px; border-radius:4px;">
+                    <div style="font-size:0.8em; color:#aaa;">Privacy Risk Score</div>
+                    <div style="font-size:1.8em; font-weight:bold; color:${riskScore>=70?'#ff5252':riskScore>=30?'#ff9800':'#4caf50'}">${riskScore}%</div>
+                    <div style="font-size:0.8em; color:#aaa;">${riskLabel}</div>
+                </div>
+            </div>
+            <div style="margin-bottom:10px;">
+                <b>Global DP Epsilon:</b> ε=${globalEps} &nbsp;|&nbsp;
+                <b>Correlation Preserved:</b> ${((q.correlation_similarity||0)*100).toFixed(1)}%
+            </div>
+            <div style="margin-bottom:8px;"><b>Per-column ε budgets:</b><br>${perColHtml}</div>
+            <div><b>Per-column KS Scores:</b><br>${ksHtml}</div>
         `;
         const dl = document.getElementById('core-downloads');
         dl.innerHTML = '';

@@ -174,7 +174,8 @@ class GenerationBridge:
             num_rows=target_rows,
             output_dir=output_dir,
         )
-        quality_scores["epsilon_budget_summary"] = tracker.summary()
+        # tracker is a plain dict returned by run_synthesis() — store it directly
+        quality_scores["epsilon_budget_summary"] = tracker
         return synth_df, quality_scores
 
     def ai_validate(

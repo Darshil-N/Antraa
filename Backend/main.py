@@ -964,17 +964,59 @@ async def run_core_pipeline(job_id: str) -> None:
         finally:
             conn.close()
 
+        # Build per-column compliance actions from DB for the audit trail
+        conn = get_conn()
+        try:
+            compliance_rows = conn.execute(
+                """SELECT column_name, sensitivity_class, compliance_action,
+                          compliance_rule_citation, epsilon_budget, user_override,
+                          user_override_value
+                   FROM column_profiles WHERE job_id = ?""",
+                [job_id],
+            ).fetchall()
+            compliance_detail = {
+                row[0]: {
+                    "sensitivity_class":  row[1],
+                    "compliance_action":  row[6] if row[5] else row[2],  # prefer user override
+                    "regulation_citation": row[3],
+                    "epsilon_budget":     row[4],
+                    "user_overridden":    bool(row[5]),
+                }
+                for row in compliance_rows
+            }
+        except Exception:
+            compliance_detail = {}
+        finally:
+            conn.close()
+
         audit_trail = {
-            "job_id": job_id,
+            "job_id":    job_id,
             "timestamp": now_iso(),
             "source_file": filename,
             "profile_summary": {
-                "rows": int(profile["rows"]),
-                "columns": int(profile["columns"]),
+                "rows":               int(profile["rows"]),
+                "columns":            int(profile["columns"]),
                 "completeness_score": profile["quality_score"],
             },
-            "quality": quality,
-            "note": "Core backend pipeline execution record",
+            "compliance_plan": compliance_detail,
+            "approval_decisions": {
+                d.column_name: {
+                    "action":         d.override_action or "RETAIN",
+                    "epsilon_budget": d.epsilon_budget,
+                    "approved":       d.approved,
+                    "user_overridden": d.user_override,
+                }
+                for d in (approval_payload.decisions if approval_payload else [])
+            },
+            "epsilon_budget": quality.get("epsilon_summary", {}),
+            "quality_scores": {
+                "overall_quality_score":  quality.get("overall_quality_score", 0.0),
+                "ks_test_scores":         quality.get("ks_test_scores", {}),
+                "correlation_similarity": quality.get("correlation_similarity", 0.0),
+                "privacy_risk_score":     quality.get("privacy_risk_score", 0.0),
+            },
+            "ai_narrative": ai_narrative or {},
+            "note": "FairSynth AI pipeline execution record — full compliance audit trail",
         }
         audit_path = outputs_dir / "audit_trail.json"
         dump_json(audit_path, audit_trail)
