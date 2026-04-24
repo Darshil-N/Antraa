@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
 const API_BASE = "http://localhost:8000/api"
 
-export default function BiasAuditEntryPage() {
+function BiasAuditEntryContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const sourceJobId = searchParams.get("source_job_id")
@@ -109,5 +109,13 @@ export default function BiasAuditEntryPage() {
         </CardContent>
       </Card>
     </main>
+  )
+}
+
+export default function BiasAuditEntryPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500">Loading...</div>}>
+      <BiasAuditEntryContent />
+    </Suspense>
   )
 }

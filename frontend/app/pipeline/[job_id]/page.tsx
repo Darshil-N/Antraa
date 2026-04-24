@@ -387,6 +387,7 @@ export default function PipelinePage() {
     }
 
     return () => ws.current?.close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.job_id])
 
   useEffect(() => {
@@ -456,24 +457,10 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        {/* Progress Rail — wider, glass morphism */}
-        <section
-          className="mb-6 overflow-hidden rounded-[1.5rem] p-[1px]"
-          style={{
-            background: "linear-gradient(135deg, rgba(0,82,120,0.55) 0%, rgba(0,129,167,0.4) 50%, rgba(0,175,185,0.35) 100%)",
-            boxShadow: "0 16px 48px rgba(0,129,167,0.22)",
-          }}
-        >
-          <div
-            className="overflow-hidden rounded-[calc(1.5rem-1px)] px-6 py-7 h-full"
-            style={{
-              background: "linear-gradient(145deg, rgba(0,40,70,0.88) 0%, rgba(0,55,85,0.92) 100%)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-            }}
-          >
-            <h2 className="mb-6 text-xs font-bold uppercase tracking-[0.3em] text-[#00d4e0]/70">
+      <div className="mx-auto max-w-4xl">
+        <section className="mb-6 flex flex-col">
+          <div className="flex-1 flex flex-col pt-2 pr-4">
+            <h2 className="mb-6 px-1 text-sm font-bold uppercase tracking-[0.2em] text-[#0081A7]">
               Progress Rail
             </h2>
 
@@ -494,18 +481,18 @@ export default function PipelinePage() {
                         damping: 30,
                         delay: index * 0.04,
                       }}
-                      className="flex items-center gap-4 rounded-xl px-5 py-4"
+                      className="flex items-center gap-4 rounded-xl px-5 py-4 transition-colors"
                       style={{
                         background: item.active
-                          ? "rgba(0,129,167,0.20)"
+                          ? "rgba(0,129,167,0.08)"
                           : item.done
-                          ? "rgba(0,175,185,0.10)"
+                          ? "rgba(0,175,185,0.05)"
                           : "transparent",
                         borderLeft: item.active
                           ? "3px solid #0081A7"
                           : item.done
                           ? "3px solid #00AFB9"
-                          : "3px solid rgba(255,255,255,0.08)",
+                          : "3px solid rgba(0,129,167,0.15)",
                       }}
                     >
                       <PhaseIcon done={item.done} active={item.active} />
@@ -515,10 +502,10 @@ export default function PipelinePage() {
                             className="text-sm font-bold"
                             style={{
                               color: item.active
-                                ? "#ffffff"
+                                ? "#0081A7"
                                 : item.done
-                                ? "#6ee7ef"
-                                : "#94a3b8",
+                                ? "#00AFB9"
+                                : "#64748b",
                             }}
                           >
                             {phaseLabels[item.phase] ?? item.phase}
@@ -527,10 +514,10 @@ export default function PipelinePage() {
                             className="mt-0.5 text-xs font-medium"
                             style={{
                               color: item.active
-                                ? "rgba(255,255,255,0.6)"
+                                ? "#005f7a"
                                 : item.done
-                                ? "rgba(110,231,239,0.6)"
-                                : "#64748b",
+                                ? "#00AFB9"
+                                : "#94a3b8",
                             }}
                           >
                             {item.done ? "Completed" : item.active ? "Running" : "Waiting"}
@@ -568,17 +555,17 @@ export default function PipelinePage() {
                 .map((item) => (
                   <div
                     key={item.phase}
-                    className="flex items-center gap-4 rounded-xl px-5 py-4 opacity-40"
-                    style={{ borderLeft: "3px solid rgba(255,255,255,0.08)" }}
+                    className="flex items-center gap-4 rounded-xl px-5 py-4 opacity-50"
+                    style={{ borderLeft: "3px solid transparent" }}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5">
-                      <Circle className="h-4 w-4 text-white/25" />
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#0081A7]/20">
+                      <Circle className="h-4 w-4 text-[#0081A7]/30" />
                     </span>
                     <div>
-                      <p className="text-sm font-medium text-white/40">
+                      <p className="text-sm font-medium text-[#0081A7]/60">
                         {phaseLabels[item.phase] ?? item.phase}
                       </p>
-                      <p className="text-xs text-white/20">Waiting</p>
+                      <p className="text-xs text-[#0081A7]/40">Waiting</p>
                     </div>
                   </div>
                 ))}
@@ -586,23 +573,6 @@ export default function PipelinePage() {
           </div>
         </section>
 
-        {/* Live Agent Logs */}
-        <section className="mb-6 flex flex-col h-[500px]">
-          <div className="flex-1 rounded-2xl border border-gray-200 bg-white/60 p-5 shadow-sm backdrop-blur-md">
-            <h2 className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-[#0081A7]">
-              Live Agent Logs
-            </h2>
-            <div className="h-[400px] overflow-auto space-y-2 rounded-xl bg-gray-50/50 p-4 border border-gray-100">
-              {logs.map((log, index) => (
-                <div key={index} className="flex gap-3 text-xs">
-                  <span className="shrink-0 text-gray-400 font-mono">{log.time}</span>
-                  <span className="text-gray-700 font-mono">{log.msg}</span>
-                </div>
-              ))}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
-        </section>
       </div>
 
       {/* Human Approval Modal — genie effect */}

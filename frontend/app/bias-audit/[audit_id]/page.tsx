@@ -56,6 +56,7 @@ export default function BiasAuditPage() {
     }
 
     return () => ws.current?.close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.audit_id])
 
   useEffect(() => {
