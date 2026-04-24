@@ -1,0 +1,24 @@
+# Python virtual environment
+.venv/
+
+# Python bytecode and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime state
+data.db
+outputs/
+tmp_jobs/
+tmp_bias/
+
+# Local Node artifacts that are not used by the backend
+package-lock.json
+uploads/package-lock.json
+
+# Optional local logs
+*.log
