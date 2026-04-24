@@ -20,6 +20,7 @@ const links = [
   { href: "/pipeline/demo-job", label: "Pipeline", icon: Route },
   { href: "/results/demo-job", label: "Results", icon: ChartColumnBig },
   { href: "/bias-audit", label: "Bias Audit", icon: ShieldAlert },
+  { href: "/finetune/demo-job", label: "Fine-Tune", icon: Sparkles },
   { href: "/about", label: "About", icon: Info },
 ]
 

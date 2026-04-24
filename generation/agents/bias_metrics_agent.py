@@ -81,8 +81,14 @@ def _binarize_outcome(df: pd.DataFrame, outcome_col: str) -> pd.DataFrame:
         else:
             raise ValueError(f"Outcome column '{outcome_col}' has {len(unique_vals)} unique values — must be binary.")
     else:
-        # Numeric — ensure 0/1
-        df[outcome_col] = (df[outcome_col] > 0).astype(int)
+        # Numeric — ensure 0/1 using median
+        unique_vals = col.dropna().unique()
+        if len(unique_vals) == 2:
+             pos_val = max(unique_vals)
+             df[outcome_col] = (col == pos_val).astype(int)
+        else:
+             median_val = col.median()
+             df[outcome_col] = (col > median_val).astype(int)
     return df
 
 

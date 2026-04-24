@@ -6,7 +6,7 @@ import { useParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, PieChart, Pie, Legend } from "recharts"
 
 const API_BASE = "http://localhost:8000/api"
 
@@ -42,6 +42,12 @@ export default function ResultsPage() {
     { name: "Privacy Risk Score", value: riskScore + "%", color: "text-[#ff9800]" },
     { name: "Correlation Preservation", value: correlationSim + "%", color: "text-[#0081A7]" },
   ]
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#ffc658'];
+  const epsChartData = Object.entries(perColEps).map(([name, value], index) => ({
+    name,
+    value: Number(value),
+  }))
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
@@ -101,35 +107,53 @@ export default function ResultsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Column Privacy Profiles</CardTitle>
+            <CardTitle className="text-lg">Privacy Budget Distribution (ε)</CardTitle>
           </CardHeader>
-          <CardContent className="h-[350px] overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Column</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Epsilon (ε)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(data.column_summary || []).map((item: any) => (
-                  <TableRow key={item.column_name}>
-                    <TableCell className="font-medium">{item.column_name}</TableCell>
-                    <TableCell>{item.compliance_action}</TableCell>
-                    <TableCell>
-                      {item.compliance_action === "RETAIN_WITH_NOISE" ? (
-                        <span className="rounded bg-amber-500/20 px-2 py-1 text-xs text-amber-500 font-bold">
-                          ε = {perColEps[item.column_name] || item.epsilon_budget}
-                        </span>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="h-[350px]">
+            <div className="grid grid-cols-2 h-full gap-4">
+              {epsChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={epsChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                      {epsChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No budget data</div>
+              )}
+              
+              <div className="overflow-auto border-l border-border pl-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Column</TableHead>
+                      <TableHead>Epsilon (ε)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(data.column_summary || []).map((item: any) => (
+                      <TableRow key={item.column_name}>
+                        <TableCell className="font-medium">{item.column_name}</TableCell>
+                        <TableCell>
+                          {item.compliance_action === "RETAIN_WITH_NOISE" ? (
+                            <span className="rounded bg-amber-500/20 px-2 py-1 text-xs text-amber-500 font-bold">
+                              {perColEps[item.column_name] || item.epsilon_budget}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>

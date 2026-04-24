@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts"
 
 const API_BASE = "http://localhost:8000/api"
 
@@ -40,6 +41,11 @@ export default function PatternAnalysisPage() {
 
   const score = data.preservation_score
   const scoreColor = score >= 0.85 ? '#4caf50' : score >= 0.65 ? '#ff9800' : '#ff5252'
+
+  const driftChartData = data.numeric_drift ? Object.entries(data.numeric_drift).map(([col, d]: [string, any]) => ({
+    name: col,
+    score: d.preservation_score * 100,
+  })) : []
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
@@ -103,36 +109,55 @@ export default function PatternAnalysisPage() {
         </CardContent>
       </Card>
 
-      {data.numeric_drift && Object.keys(data.numeric_drift).length > 0 && (
+      {driftChartData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Per-Column Numeric Drift</CardTitle>
+            <CardTitle className="text-lg">Numeric Drift Preservation Chart</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Column</TableHead>
-                  <TableHead>Mean Drift %</TableHead>
-                  <TableHead>Median Drift %</TableHead>
-                  <TableHead>Preservation</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(data.numeric_drift).map(([col, d]: [string, any]) => {
-                  const pc = (d.preservation_score * 100).toFixed(1)
-                  const color = d.preservation_score >= 0.85 ? '#4caf50' : d.preservation_score >= 0.65 ? '#ff9800' : '#ff5252'
-                  return (
-                    <TableRow key={col}>
-                      <TableCell className="font-medium">{col}</TableCell>
-                      <TableCell>{d.mean_drift_pct?.toFixed(2)}%</TableCell>
-                      <TableCell>{d.median_drift_pct?.toFixed(2)}%</TableCell>
-                      <TableCell style={{ color, fontWeight: 'bold' }}>{pc}%</TableCell>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={driftChartData} layout="vertical" margin={{ left: 40, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#444" />
+                    <XAxis type="number" domain={[0, 100]} stroke="#888" />
+                    <YAxis dataKey="name" type="category" stroke="#888" width={100} tick={{ fontSize: 12 }} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
+                    <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                      {driftChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.score >= 85 ? "#4caf50" : entry.score >= 65 ? "#ff9800" : "#ff5252"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="overflow-auto max-h-[300px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Column</TableHead>
+                      <TableHead>Mean Drift %</TableHead>
+                      <TableHead>Median Drift %</TableHead>
+                      <TableHead>Preservation</TableHead>
                     </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(data.numeric_drift).map(([col, d]: [string, any]) => {
+                      const pc = (d.preservation_score * 100).toFixed(1)
+                      const color = d.preservation_score >= 0.85 ? '#4caf50' : d.preservation_score >= 0.65 ? '#ff9800' : '#ff5252'
+                      return (
+                        <TableRow key={col}>
+                          <TableCell className="font-medium">{col}</TableCell>
+                          <TableCell>{d.mean_drift_pct?.toFixed(2)}%</TableCell>
+                          <TableCell>{d.median_drift_pct?.toFixed(2)}%</TableCell>
+                          <TableCell style={{ color, fontWeight: 'bold' }}>{pc}%</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
