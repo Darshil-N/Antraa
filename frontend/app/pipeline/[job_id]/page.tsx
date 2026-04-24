@@ -1,22 +1,114 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { pipelinePhases, sampleColumns, sampleLogs } from "@/lib/fairsynth-mock"
+
+const API_BASE = "http://localhost:8000/api"
+const WS_BASE = "ws://localhost:8000/ws"
+const pipelinePhases = ["UPLOADED", "PROFILING", "COMPLIANCE", "AWAITING_APPROVAL", "GENERATING", "VALIDATING", "COMPLETE", "FAILED"]
 
 export default function PipelinePage() {
   const params = useParams<{ job_id: string }>()
-  const [approvalOpen, setApprovalOpen] = useState(true)
-  const [phaseIndex, setPhaseIndex] = useState(2)
+  const router = useRouter()
+  const [phase, setPhase] = useState("UPLOADED")
+  const [logs, setLogs] = useState<{ time: string; msg: string }[]>([])
+  const [approvalOpen, setApprovalOpen] = useState(false)
+  const [columnsData, setColumnsData] = useState<any[]>([])
+  const [targetRows, setTargetRows] = useState(1000)
+  const [decisions, setDecisions] = useState<any>({})
+  const ws = useRef<WebSocket | null>(null)
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  const phaseIndex = pipelinePhases.indexOf(phase)
 
   const phaseStatus = useMemo(
-    () => pipelinePhases.map((phase, index) => ({ phase, done: index < phaseIndex, active: index === phaseIndex })),
-    [phaseIndex],
+    () => pipelinePhases.slice(1, 7).map((p, index) => {
+      const idx = pipelinePhases.indexOf(p)
+      return { phase: p, done: idx < phaseIndex, active: idx === phaseIndex }
+    }),
+    [phaseIndex]
   )
+
+  useEffect(() => {
+    if (!params.job_id) return
+
+    // Start pipeline
+    fetch(`${API_BASE}/start-pipeline/${params.job_id}`, { method: "POST" }).catch(console.error)
+
+    ws.current = new WebSocket(`${WS_BASE}/${params.job_id}`)
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      const time = new Date().toLocaleTimeString()
+      
+      if (data.type === "PHASE_CHANGE") {
+        setPhase(data.payload.phase)
+        setLogs((prev) => [...prev, { time, msg: `Phase changed to ${data.payload.phase}` }])
+      } else if (data.type === "AGENT_LOG") {
+        setLogs((prev) => [...prev, { time, msg: `Agent: ${data.payload.message}` }])
+      } else if (data.type === "AWAITING_APPROVAL") {
+        setLogs((prev) => [...prev, { time, msg: "Pipeline paused. Waiting for human approval..." }])
+        fetchApprovalData()
+      } else if (data.type === "PIPELINE_COMPLETE") {
+        setLogs((prev) => [...prev, { time, msg: "Pipeline completed successfully!" }])
+        router.push(`/results/${params.job_id}`)
+      } else if (data.type === "PIPELINE_ERROR") {
+        setLogs((prev) => [...prev, { time, msg: `CRITICAL ERROR: ${data.payload.error}` }])
+      }
+    }
+
+    return () => ws.current?.close()
+  }, [params.job_id])
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logs])
+
+  const fetchApprovalData = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/results/${params.job_id}`)
+      const data = await res.json()
+      setColumnsData(data.column_summary || [])
+      
+      const initialDecisions: any = {}
+      ;(data.column_summary || []).forEach((c: any) => {
+        initialDecisions[c.column_name] = {
+          approved: true,
+          override_action: "",
+          epsilon_budget: c.epsilon_budget || 1.0
+        }
+      })
+      setDecisions(initialDecisions)
+      setApprovalOpen(true)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const submitApproval = async () => {
+    const payload = Object.keys(decisions).map((col) => ({
+      column_name: col,
+      approved: decisions[col].approved,
+      override_action: decisions[col].override_action || null,
+      user_override: !!decisions[col].override_action,
+      epsilon_budget: decisions[col].epsilon_budget
+    }))
+
+    try {
+      setApprovalOpen(false)
+      setLogs((prev) => [...prev, { time: new Date().toLocaleTimeString(), msg: "Approval submitted, resuming..." }])
+      await fetch(`${API_BASE}/approve-plan/${params.job_id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions: payload, synthetic_rows: targetRows })
+      })
+    } catch (e) {
+      console.error(e)
+    }
+  }
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
@@ -25,7 +117,6 @@ export default function PipelinePage() {
           <h1 className="text-2xl font-semibold text-foreground">Pipeline Monitor</h1>
           <p className="text-sm text-secondary-foreground">Job ID: {params.job_id}</p>
         </div>
-        <Button onClick={() => setPhaseIndex((index) => Math.min(index + 1, pipelinePhases.length - 1))}>Advance Phase</Button>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[280px,1fr]">
@@ -54,11 +145,12 @@ export default function PipelinePage() {
           </CardHeader>
           <CardContent>
             <div className="h-[420px] space-y-2 overflow-auto rounded-md border border-border bg-secondary/35 p-4">
-              {sampleLogs.map((log, index) => (
+              {logs.map((log, index) => (
                 <p key={index} className="font-mono text-xs text-secondary-foreground">
-                  {new Date(Date.now() - index * 12000).toLocaleTimeString()} - {log}
+                  {log.time} - {log.msg}
                 </p>
               ))}
+              <div ref={logsEndRef} />
             </div>
           </CardContent>
         </Card>
@@ -74,44 +166,79 @@ export default function PipelinePage() {
               <p className="mb-4 text-sm text-secondary-foreground">
                 Review classification decisions and privacy budget before synthetic generation starts.
               </p>
+              <div className="mb-4">
+                <label className="text-sm font-medium">Rows to synthesize:</label>
+                <input 
+                  type="number" 
+                  value={targetRows} 
+                  onChange={(e) => setTargetRows(parseInt(e.target.value) || 1000)}
+                  className="ml-2 rounded border bg-card px-2 py-1 text-sm text-foreground"
+                />
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Column</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Sensitivity</TableHead>
-                    <TableHead>Compliance Action</TableHead>
-                    <TableHead>Privacy Level</TableHead>
+                    <TableHead>Suggested Action</TableHead>
+                    <TableHead>Override</TableHead>
+                    <TableHead>Epsilon (ε)</TableHead>
+                    <TableHead>Approve</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sampleColumns.map((item) => (
-                    <TableRow key={item.column}>
-                      <TableCell className="font-medium">{item.column}</TableCell>
-                      <TableCell>{item.detectedType}</TableCell>
-                      <TableCell>{item.sensitivity}</TableCell>
-                      <TableCell>{item.action}</TableCell>
-                      <TableCell>{item.epsilon}</TableCell>
-                    </TableRow>
-                  ))}
+                  {columnsData.map((item) => {
+                    const action = decisions[item.column_name]?.override_action || item.compliance_action
+                    return (
+                      <TableRow key={item.column_name}>
+                        <TableCell className="font-medium">{item.column_name}</TableCell>
+                        <TableCell>{item.inferred_type || "-"}</TableCell>
+                        <TableCell>
+                          <span className={`rounded px-2 py-1 text-xs font-bold ${item.sensitivity_class === "SAFE" ? "bg-green-500/20 text-green-500" : "bg-amber-500/20 text-amber-500"}`}>
+                            {item.sensitivity_class}
+                          </span>
+                        </TableCell>
+                        <TableCell>{item.compliance_action}</TableCell>
+                        <TableCell>
+                          <select 
+                            className="bg-card text-foreground rounded border px-2 py-1 text-sm"
+                            value={decisions[item.column_name]?.override_action || ""}
+                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], override_action: e.target.value}})}
+                          >
+                            <option value="">(Suggested)</option>
+                            <option value="RETAIN">RETAIN</option>
+                            <option value="RETAIN_WITH_NOISE">RETAIN_WITH_NOISE</option>
+                            <option value="GENERALIZE">GENERALIZE</option>
+                            <option value="PSEUDONYMIZE">PSEUDONYMIZE</option>
+                            <option value="SUPPRESS">SUPPRESS</option>
+                          </select>
+                        </TableCell>
+                        <TableCell>
+                          <input 
+                            type="number" 
+                            step="0.1" 
+                            disabled={action !== "RETAIN_WITH_NOISE"}
+                            value={decisions[item.column_name]?.epsilon_budget || 1.0}
+                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], epsilon_budget: parseFloat(e.target.value)}})}
+                            className="w-16 rounded border bg-card px-2 py-1 text-sm"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <input 
+                            type="checkbox" 
+                            checked={decisions[item.column_name]?.approved || false}
+                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], approved: e.target.checked}})}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
 
               <div className="mt-5 flex flex-wrap justify-end gap-3">
-                <Button variant="outline" onClick={() => setApprovalOpen(false)}>
-                  Continue Later
-                </Button>
-                <Button
-                  onClick={() => {
-                    setApprovalOpen(false)
-                    setPhaseIndex(3)
-                  }}
-                >
-                  Approve and Generate
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link href={`/results/${params.job_id}`}>Go to Results</Link>
-                </Button>
+                <Button onClick={submitApproval}>Approve and Generate</Button>
               </div>
             </CardContent>
           </Card>

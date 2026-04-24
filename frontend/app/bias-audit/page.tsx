@@ -1,13 +1,48 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
+const API_BASE = "http://localhost:8000/api"
+
 export default function BiasAuditEntryPage() {
   const router = useRouter()
-  const [selectedSource, setSelectedSource] = useState("new-upload")
+  const searchParams = useSearchParams()
+  const sourceJobId = searchParams.get("source_job_id")
+
+  const [selectedSource, setSelectedSource] = useState(sourceJobId ? "existing-result" : "new-upload")
+  const [file, setFile] = useState<File | null>(null)
+  const [jobIdInput, setJobIdInput] = useState(sourceJobId || "")
+  const [isStarting, setIsStarting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const startAudit = async () => {
+    if (selectedSource === "new-upload" && !file) return setError("Please select a file.")
+    if (selectedSource === "existing-result" && !jobIdInput) return setError("Please provide a Job ID.")
+
+    setIsStarting(true)
+    setError(null)
+
+    const formData = new FormData()
+    if (selectedSource === "new-upload" && file) {
+      formData.append("file", file)
+    } else if (selectedSource === "existing-result" && jobIdInput) {
+      formData.append("source_job_id", jobIdInput)
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/bias-audit/start`, { method: "POST", body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || "Failed to start bias audit")
+      
+      router.push(`/bias-audit/${data.audit_id}`)
+    } catch (e: any) {
+      setError(e.message)
+      setIsStarting(false)
+    }
+  }
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
@@ -44,15 +79,32 @@ export default function BiasAuditEntryPage() {
           </div>
 
           <div className="mt-6 rounded-lg border border-border bg-secondary/45 p-6">
-            <input
-              type="file"
-              accept=".csv,.parquet"
-              className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground"
-            />
+            {selectedSource === "new-upload" ? (
+              <input
+                type="file"
+                accept=".csv,.parquet"
+                className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Source Job ID</label>
+                <input 
+                  type="text" 
+                  className="block w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-secondary-foreground"
+                  placeholder="e.g. 1234-abcd..."
+                  value={jobIdInput}
+                  onChange={(e) => setJobIdInput(e.target.value)}
+                />
+              </div>
+            )}
+            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
           </div>
 
           <div className="mt-6">
-            <Button onClick={() => router.push("/bias-audit/demo-audit")}>Start Bias Audit</Button>
+            <Button disabled={isStarting} onClick={startAudit}>
+              {isStarting ? "Starting..." : "Start Bias Audit"}
+            </Button>
           </div>
         </CardContent>
       </Card>
