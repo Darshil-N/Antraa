@@ -3,14 +3,328 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { AnimatePresence, motion } from "framer-motion"
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Loader2,
+  ShieldCheck,
+  X,
+  ChevronDown,
+} from "lucide-react"
 
 const API_BASE = "http://localhost:8000/api"
 const WS_BASE = "ws://localhost:8000/ws"
-const pipelinePhases = ["UPLOADED", "PROFILING", "COMPLIANCE", "AWAITING_APPROVAL", "GENERATING", "VALIDATING", "COMPLETE", "FAILED"]
+const pipelinePhases = [
+  "UPLOADED",
+  "PROFILING",
+  "COMPLIANCE",
+  "AWAITING_APPROVAL",
+  "GENERATING",
+  "VALIDATING",
+  "COMPLETE",
+  "FAILED"
+]
 
+/* ── Animated Custom Checkbox ── */
+function ApproveCheckbox({ id, checked, onChange }: { id: string; checked: boolean; onChange: () => void }) {
+  const inputId = `chk-${id}`
+  return (
+    <label htmlFor={inputId} className="inline-flex cursor-pointer items-center justify-center">
+      <input
+        id={inputId}
+        type="checkbox"
+        className="sr-only"
+        checked={checked}
+        onChange={onChange}
+      />
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 200 200"
+        className="h-8 w-8"
+      >
+        <mask fill="white" id={`mask-${id}`}>
+          <rect height={200} width={200} />
+        </mask>
+        <rect
+          mask={`url(#mask-${id})`}
+          strokeWidth={40}
+          height={200}
+          width={200}
+          fill="rgba(207,205,205,0.2)"
+          stroke="#8c00ff"
+          style={{
+            strokeDasharray: 800,
+            strokeDashoffset: checked ? 0 : 800,
+            transition: "stroke-dashoffset 0.5s ease-in",
+          }}
+        />
+        <path
+          strokeWidth={15}
+          d="M52 111.018L76.9867 136L149 64"
+          stroke="#8c00ff"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{
+            strokeDasharray: 172,
+            strokeDashoffset: checked ? 0 : 172,
+            transition: "stroke-dashoffset 0.5s ease-in",
+          }}
+        />
+      </svg>
+    </label>
+  )
+}
+
+/* ── Phase status icons ── */
+function PhaseIcon({ done, active }: { done: boolean; active: boolean }) {
+  if (done)
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00AFB9]/20">
+        <CheckCircle2 className="h-5 w-5 text-[#00AFB9]" />
+      </span>
+    )
+  if (active)
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0081A7]/15">
+        <Loader2 className="h-5 w-5 animate-spin text-[#0081A7]" />
+      </span>
+    )
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10">
+      <Circle className="h-5 w-5 text-white/30" />
+    </span>
+  )
+}
+
+/* ── Sensitivity badge ── */
+function SensitivityBadge({ value }: { value: string }) {
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${value === "SAFE" ? "bg-green-500/20 text-green-500 border-green-500/30" : "bg-amber-500/20 text-amber-500 border-amber-500/30"}`}>
+      {value}
+    </span>
+  )
+}
+
+/* ── Override-action mini select ── */
+function OverrideSelect({ value, onChange }: { value: string; onChange: (val: string) => void }) {
+  const options = ["", "SUPPRESS", "GENERALIZE", "RETAIN", "RETAIN_WITH_NOISE", "PSEUDONYMIZE"]
+  return (
+    <div className="relative inline-flex items-center">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="appearance-none rounded-lg border border-white/15 bg-white/10 py-1.5 pl-3 pr-8 text-xs text-white/90 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-[#8c00ff]/60"
+      >
+        <option value="" className="bg-[#1a1a2e] text-white/60">(Suggested)</option>
+        {options.filter(o=>o).map((o) => (
+          <option key={o} value={o} className="bg-[#1a1a2e] text-white">
+            {o}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 text-white/50" />
+    </div>
+  )
+}
+
+/* ── Genie Modal (macOS-style) ── */
+function HumanApprovalModal({
+  columnsData,
+  decisions,
+  setDecisions,
+  targetRows,
+  setTargetRows,
+  onApprove,
+  onDismiss,
+}: {
+  columnsData: any[]
+  decisions: any
+  setDecisions: (val: any) => void
+  targetRows: number
+  setTargetRows: (val: number) => void
+  onApprove: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      {/* Backdrop blur */}
+      <motion.div
+        className="absolute inset-0"
+        style={{
+          background: "rgba(0,10,30,0.55)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+        }}
+        onClick={onDismiss}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+
+      {/* Genie sheet — scales from bottom-center */}
+      <motion.div
+        className="relative z-10 w-full max-w-5xl overflow-hidden rounded-3xl p-[1px]"
+        style={{
+          background: "linear-gradient(135deg, rgba(140,0,255,0.5) 0%, rgba(0,175,185,0.4) 50%, rgba(0,129,167,0.3) 100%)",
+          boxShadow: "0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)",
+        }}
+        initial={{ opacity: 0, scale: 0.55, y: 120, originX: "50%", originY: "100%" }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.6, y: 100 }}
+        transition={{
+          type: "spring",
+          stiffness: 280,
+          damping: 28,
+          mass: 0.9,
+        }}
+      >
+        <div
+          className="relative overflow-hidden rounded-[calc(1.5rem-1px)]"
+          style={{
+            background: "linear-gradient(145deg, rgba(18,18,40,0.96) 0%, rgba(10,10,28,0.98) 100%)",
+            backdropFilter: "blur(40px)",
+            WebkitBackdropFilter: "blur(40px)",
+          }}
+        >
+          {/* Ambient glow blobs */}
+          <div className="pointer-events-none absolute -left-20 -top-20 h-60 w-60 rounded-full bg-[#8c00ff]/15 blur-3xl" />
+          <div className="pointer-events-none absolute -right-16 -bottom-16 h-48 w-48 rounded-full bg-[#00AFB9]/12 blur-3xl" />
+
+          {/* Header */}
+          <div className="relative flex items-center justify-between border-b border-white/8 px-8 py-6">
+            <div className="flex items-center gap-4">
+              {/* macOS traffic lights */}
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+              </div>
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="h-5 w-5 text-[#8c00ff]" />
+                <h2 className="text-lg font-bold text-white">Human Approval Required</h2>
+              </div>
+            </div>
+            <button
+              onClick={onDismiss}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/50 transition-colors hover:bg-white/15 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Subtitle */}
+          <div className="px-8 pt-5 pb-3 flex flex-wrap justify-between items-end gap-3">
+            <p className="text-sm text-white/55 max-w-xl">
+              Review classification decisions and override privacy actions before synthetic generation begins. Approve each column to proceed.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-widest text-white/40">Rows to synthesize:</label>
+              <input 
+                type="number" 
+                value={targetRows} 
+                onChange={(e) => setTargetRows(parseInt(e.target.value) || 1000)}
+                className="w-32 rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-white outline-none focus:ring-1 focus:ring-[#8c00ff]/60"
+              />
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto px-8 pb-6">
+            <table className="w-full table-auto border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-white/8">
+                  {["Column Name", "Type", "Sensitivity", "Suggested Action", "Override", "Epsilon (ε)", "Approve"].map((h) => (
+                    <th
+                      key={h}
+                      className="py-3 pr-4 text-left text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40 first:pl-0"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {columnsData.map((item, i) => {
+                  const action = decisions[item.column_name]?.override_action || item.compliance_action
+                  return (
+                  <motion.tr
+                    key={item.column_name}
+                    className="border-b border-white/5 transition-colors hover:bg-white/3"
+                    initial={{ opacity: 0, x: -12 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.05 * i, duration: 0.3 }}
+                  >
+                    <td className="py-4 pr-4 font-mono text-sm font-medium text-white">{item.column_name}</td>
+                    <td className="py-4 pr-4 text-xs text-white/70">{item.inferred_type || "-"}</td>
+                    <td className="py-4 pr-4">
+                      <SensitivityBadge value={item.sensitivity_class} />
+                    </td>
+                    <td className="py-4 pr-4 text-xs text-white/60">{item.compliance_action}</td>
+                    <td className="py-4 pr-4">
+                      <OverrideSelect 
+                        value={decisions[item.column_name]?.override_action || ""}
+                        onChange={(val) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], override_action: val}})}
+                      />
+                    </td>
+                    <td className="py-4 pr-4">
+                      <input 
+                        type="number" 
+                        step="0.1" 
+                        disabled={action !== "RETAIN_WITH_NOISE"}
+                        value={decisions[item.column_name]?.epsilon_budget || 1.0}
+                        onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], epsilon_budget: parseFloat(e.target.value)}})}
+                        className="w-16 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm text-white outline-none disabled:opacity-30 focus:border-[#0081A7]"
+                      />
+                    </td>
+                    <td className="py-4">
+                      <div className="flex justify-center">
+                        <ApproveCheckbox 
+                          id={`${item.column_name}-${i}`} 
+                          checked={decisions[item.column_name]?.approved || false}
+                          onChange={() => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], approved: !decisions[item.column_name]?.approved}})}
+                        />
+                      </div>
+                    </td>
+                  </motion.tr>
+                )})}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Footer actions */}
+          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/8 px-8 py-5">
+            <button
+              onClick={onDismiss}
+              className="rounded-xl border border-white/15 bg-white/8 px-5 py-2.5 text-sm font-medium text-white/70 transition-all hover:bg-white/15 hover:text-white"
+            >
+              Review Later
+            </button>
+            <button
+              onClick={onApprove}
+              className="rounded-xl bg-gradient-to-r from-[#8c00ff] to-[#0081A7] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(140,0,255,0.35)] transition-all hover:shadow-[0_12px_32px_rgba(140,0,255,0.5)] hover:-translate-y-0.5"
+            >
+              Approve & Generate →
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/* ══════════════════════════════════════════════
+   Main Pipeline Page
+   ══════════════════════════════════════════════ */
 export default function PipelinePage() {
   const params = useParams<{ job_id: string }>()
   const router = useRouter()
@@ -26,13 +340,25 @@ export default function PipelinePage() {
   const phaseIndex = pipelinePhases.indexOf(phase)
 
   const phaseStatus = useMemo(
-    () => pipelinePhases.slice(1, 7).map((p, index) => {
+    () => pipelinePhases.slice(1, 7).map((p) => {
       const idx = pipelinePhases.indexOf(p)
-      return { phase: p, done: idx < phaseIndex, active: idx === phaseIndex }
+      return { phase: p, done: idx < phaseIndex, active: idx === phaseIndex, waiting: idx > phaseIndex }
     }),
     [phaseIndex]
   )
 
+  const phaseLabels: Record<string, string> = {
+    UPLOADED: "Uploaded",
+    PROFILING: "Schema Profiling",
+    COMPLIANCE: "Policy Compliance",
+    AWAITING_APPROVAL: "Awaiting Approval",
+    GENERATING: "Data Generation",
+    VALIDATING: "Validation",
+    COMPLETE: "Complete",
+    FAILED: "Failed",
+  }
+
+  // Effect to fetch and connect websocket
   useEffect(() => {
     if (!params.job_id) return
 
@@ -112,138 +438,187 @@ export default function PipelinePage() {
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      {/* Header */}
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Pipeline Monitor</h1>
-          <p className="text-sm text-secondary-foreground">Job ID: {params.job_id}</p>
+          <h1 className="text-2xl font-bold text-[#004a5e]">Pipeline Monitor</h1>
+          <p className="mt-1 text-sm font-medium" style={{ color: "#0081A7" }}>
+            Job ID:{" "}
+            <span className="rounded-md bg-[#0081A7]/12 px-2 py-0.5 font-mono text-[#005f7a]">
+              {params.job_id}
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-[#00AFB9]/25 bg-white/60 px-4 py-2 backdrop-blur-sm">
+          <Clock className="h-4 w-4 text-[#00AFB9]" />
+          <span className="text-sm font-medium text-[#005f7a]">Live</span>
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#00AFB9]" />
         </div>
       </div>
 
-      <section className="grid gap-4 lg:grid-cols-[280px,1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Progress Rail</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {phaseStatus.map((item) => (
-              <div key={item.phase} className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
-                <span
-                  className={`h-3 w-3 rounded-full ${item.done ? "bg-primary" : item.active ? "bg-secondary-foreground" : "bg-muted"}`}
-                />
-                <div>
-                  <p className="text-sm font-medium text-foreground">{item.phase}</p>
-                  <p className="text-xs text-muted-foreground">{item.done ? "Completed" : item.active ? "Running" : "Waiting"}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+        {/* Progress Rail — wider, glass morphism */}
+        <section
+          className="mb-6 overflow-hidden rounded-[1.5rem] p-[1px]"
+          style={{
+            background: "linear-gradient(135deg, rgba(0,82,120,0.55) 0%, rgba(0,129,167,0.4) 50%, rgba(0,175,185,0.35) 100%)",
+            boxShadow: "0 16px 48px rgba(0,129,167,0.22)",
+          }}
+        >
+          <div
+            className="overflow-hidden rounded-[calc(1.5rem-1px)] px-6 py-7 h-full"
+            style={{
+              background: "linear-gradient(145deg, rgba(0,40,70,0.88) 0%, rgba(0,55,85,0.92) 100%)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+            }}
+          >
+            <h2 className="mb-6 text-xs font-bold uppercase tracking-[0.3em] text-[#00d4e0]/70">
+              Progress Rail
+            </h2>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Live Agent Logs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[420px] space-y-2 overflow-auto rounded-md border border-border bg-secondary/35 p-4">
+            <div className="flex flex-col gap-2">
+              <AnimatePresence mode="popLayout">
+                {phaseStatus.map((item, index) => {
+                  if (item.waiting) return null
+                  return (
+                    <motion.div
+                      key={item.phase}
+                      layout
+                      initial={{ opacity: 0, y: 40, scale: 0.94 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -20 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 320,
+                        damping: 30,
+                        delay: index * 0.04,
+                      }}
+                      className="flex items-center gap-4 rounded-xl px-5 py-4"
+                      style={{
+                        background: item.active
+                          ? "rgba(0,129,167,0.20)"
+                          : item.done
+                          ? "rgba(0,175,185,0.10)"
+                          : "transparent",
+                        borderLeft: item.active
+                          ? "3px solid #0081A7"
+                          : item.done
+                          ? "3px solid #00AFB9"
+                          : "3px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <PhaseIcon done={item.done} active={item.active} />
+
+                        <div className="flex-1">
+                          <p
+                            className="text-sm font-bold"
+                            style={{
+                              color: item.active
+                                ? "#ffffff"
+                                : item.done
+                                ? "#6ee7ef"
+                                : "#94a3b8",
+                            }}
+                          >
+                            {phaseLabels[item.phase] ?? item.phase}
+                          </p>
+                          <p
+                            className="mt-0.5 text-xs font-medium"
+                            style={{
+                              color: item.active
+                                ? "rgba(255,255,255,0.6)"
+                                : item.done
+                                ? "rgba(110,231,239,0.6)"
+                                : "#64748b",
+                            }}
+                          >
+                            {item.done ? "Completed" : item.active ? "Running" : "Waiting"}
+                          </p>
+                        </div>
+
+                        {item.active && (
+                          <motion.div
+                            className="h-1.5 w-24 overflow-hidden rounded-full bg-[#0081A7]/15"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                          >
+                            <motion.div
+                              className="h-full rounded-full bg-[#0081A7]"
+                              initial={{ width: "0%" }}
+                              animate={{ width: "70%" }}
+                              transition={{ duration: 1.8, ease: "easeInOut" }}
+                            />
+                          </motion.div>
+                        )}
+
+                        {item.done && (
+                          <span className="rounded-full bg-[#00AFB9]/12 px-3 py-1 text-[11px] font-semibold text-[#6ee7ef]">
+                            ✓ Done
+                          </span>
+                        )}
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+
+              {/* Waiting phases — ghost placeholders */}
+              {phaseStatus
+                .filter((item) => item.waiting)
+                .map((item) => (
+                  <div
+                    key={item.phase}
+                    className="flex items-center gap-4 rounded-xl px-5 py-4 opacity-40"
+                    style={{ borderLeft: "3px solid rgba(255,255,255,0.08)" }}
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5">
+                      <Circle className="h-4 w-4 text-white/25" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-white/40">
+                        {phaseLabels[item.phase] ?? item.phase}
+                      </p>
+                      <p className="text-xs text-white/20">Waiting</p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Live Agent Logs */}
+        <section className="mb-6 flex flex-col h-[500px]">
+          <div className="flex-1 rounded-2xl border border-gray-200 bg-white/60 p-5 shadow-sm backdrop-blur-md">
+            <h2 className="mb-4 text-sm font-bold uppercase tracking-[0.2em] text-[#0081A7]">
+              Live Agent Logs
+            </h2>
+            <div className="h-[400px] overflow-auto space-y-2 rounded-xl bg-gray-50/50 p-4 border border-gray-100">
               {logs.map((log, index) => (
-                <p key={index} className="font-mono text-xs text-secondary-foreground">
-                  {log.time} - {log.msg}
-                </p>
+                <div key={index} className="flex gap-3 text-xs">
+                  <span className="shrink-0 text-gray-400 font-mono">{log.time}</span>
+                  <span className="text-gray-700 font-mono">{log.msg}</span>
+                </div>
               ))}
               <div ref={logsEndRef} />
             </div>
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        </section>
+      </div>
 
-      {approvalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/20 p-4">
-          <Card className="w-full max-w-5xl">
-            <CardHeader>
-              <CardTitle>Approval Interface</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4 text-sm text-secondary-foreground">
-                Review classification decisions and privacy budget before synthetic generation starts.
-              </p>
-              <div className="mb-4">
-                <label className="text-sm font-medium">Rows to synthesize:</label>
-                <input 
-                  type="number" 
-                  value={targetRows} 
-                  onChange={(e) => setTargetRows(parseInt(e.target.value) || 1000)}
-                  className="ml-2 rounded border bg-card px-2 py-1 text-sm text-foreground"
-                />
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Column</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Sensitivity</TableHead>
-                    <TableHead>Suggested Action</TableHead>
-                    <TableHead>Override</TableHead>
-                    <TableHead>Epsilon (ε)</TableHead>
-                    <TableHead>Approve</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {columnsData.map((item) => {
-                    const action = decisions[item.column_name]?.override_action || item.compliance_action
-                    return (
-                      <TableRow key={item.column_name}>
-                        <TableCell className="font-medium">{item.column_name}</TableCell>
-                        <TableCell>{item.inferred_type || "-"}</TableCell>
-                        <TableCell>
-                          <span className={`rounded px-2 py-1 text-xs font-bold ${item.sensitivity_class === "SAFE" ? "bg-green-500/20 text-green-500" : "bg-amber-500/20 text-amber-500"}`}>
-                            {item.sensitivity_class}
-                          </span>
-                        </TableCell>
-                        <TableCell>{item.compliance_action}</TableCell>
-                        <TableCell>
-                          <select 
-                            className="bg-card text-foreground rounded border px-2 py-1 text-sm"
-                            value={decisions[item.column_name]?.override_action || ""}
-                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], override_action: e.target.value}})}
-                          >
-                            <option value="">(Suggested)</option>
-                            <option value="RETAIN">RETAIN</option>
-                            <option value="RETAIN_WITH_NOISE">RETAIN_WITH_NOISE</option>
-                            <option value="GENERALIZE">GENERALIZE</option>
-                            <option value="PSEUDONYMIZE">PSEUDONYMIZE</option>
-                            <option value="SUPPRESS">SUPPRESS</option>
-                          </select>
-                        </TableCell>
-                        <TableCell>
-                          <input 
-                            type="number" 
-                            step="0.1" 
-                            disabled={action !== "RETAIN_WITH_NOISE"}
-                            value={decisions[item.column_name]?.epsilon_budget || 1.0}
-                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], epsilon_budget: parseFloat(e.target.value)}})}
-                            className="w-16 rounded border bg-card px-2 py-1 text-sm"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <input 
-                            type="checkbox" 
-                            checked={decisions[item.column_name]?.approved || false}
-                            onChange={(e) => setDecisions({...decisions, [item.column_name]: {...decisions[item.column_name], approved: e.target.checked}})}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-
-              <div className="mt-5 flex flex-wrap justify-end gap-3">
-                <Button onClick={submitApproval}>Approve and Generate</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Human Approval Modal — genie effect */}
+      <AnimatePresence>
+        {approvalOpen && (
+          <HumanApprovalModal
+            columnsData={columnsData}
+            decisions={decisions}
+            setDecisions={setDecisions}
+            targetRows={targetRows}
+            setTargetRows={setTargetRows}
+            onApprove={submitApproval}
+            onDismiss={() => setApprovalOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   )
 }
