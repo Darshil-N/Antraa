@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 58 90% 95%;
+    --foreground: 195 100% 22%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 195 100% 22%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 195 100% 22%;
+
+    --primary: 195 100% 33%;
+    --primary-foreground: 58 90% 95%;
+
+    --secondary: 184 100% 36%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 28 97% 86%;
+    --muted-foreground: 195 100% 22%;
+
+    --accent: 5 82% 68%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 5 82% 68%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 28 70% 84%;
+    --input: 28 70% 84%;
+    --ring: 195 100% 33%;
+
+    --sidebar-background: 58 90% 95%;
+    --sidebar-foreground: 195 100% 22%;
+    --sidebar-primary: 195 100% 33%;
+    --sidebar-primary-foreground: 58 90% 95%;
+    --sidebar-accent: 28 97% 86%;
+    --sidebar-accent-foreground: 195 100% 22%;
+    --sidebar-border: 28 70% 84%;
+    --sidebar-ring: 195 100% 33%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-inter), sans-serif;
+    background-image:
+      radial-gradient(circle at top left, rgba(0, 175, 185, 0.14), transparent 35%),
+      radial-gradient(circle at top right, rgba(240, 113, 103, 0.12), transparent 28%),
+      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--background)) 60%, hsl(28 97% 90%) 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.5);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary));
+  }
+}
+
+@layer utilities {
+  .antraa-card-blur {
+    transition: transform 500ms ease, filter 500ms ease, opacity 500ms ease, box-shadow 500ms ease;
+  }
+
+  .antraa-card-hover:hover {
+    transform: translateY(-8px) scale(1.03);
+  }
+}

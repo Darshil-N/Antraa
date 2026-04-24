@@ -1,0 +1,35 @@
+# Dependencies
+/node_modules
+
+# Next.js build output
+/.next/
+/out/
+/build/
+
+# Local caches and tooling
+.next/cache/
+.turbo/
+.npm/
+coverage/
+.eslintcache
+
+# Environment files
+.env*
+
+# Deployment metadata
+.vercel/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

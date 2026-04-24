@@ -1,9 +1,51 @@
 # Generated project structure file
 project_structure.txt
 
+# Node / frontend artifacts
+node_modules/
+Frontend/node_modules/
+Frontend/.next/
+Frontend/out/
+Frontend/.turbo/
+Frontend/.vercel/
+Frontend/coverage/
+Frontend/.npm/
+Frontend/.eslintcache
+Frontend/*.tsbuildinfo
+Frontend/.env*
+
+# Python / backend artifacts
+Backend/.venv/
+Backend/venv/
+Backend/ENV/
+Backend/__pycache__/
+Backend/*.py[cod]
+Backend/.pytest_cache/
+Backend/.mypy_cache/
+Backend/.ruff_cache/
+Backend/data.db
+Backend/outputs/
+Backend/tmp_jobs/
+Backend/tmp_bias/
+Backend/*.log
+
 # Python bytecode and caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+*.sqlite3
+*.db-journal
+
+# Frontend / Next.js
+.next/
+/out/
+/build
+/.vercel
+.env*
+*.tsbuildinfo
 
 # Virtual environments
 .venv/
@@ -13,7 +55,9 @@ ENV/
 # OS generated files
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # VS Code / IDE
 .vscode/
 .idea/
+.history/
