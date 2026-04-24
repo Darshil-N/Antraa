@@ -6,13 +6,14 @@ import { useParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, PieChart, Pie, Legend } from "recharts"
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Legend, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart, Bar, ComposedChart, Line } from "recharts"
 
 const API_BASE = "http://localhost:8000/api"
 
 export default function ResultsPage() {
   const params = useParams<{ job_id: string }>()
   const [data, setData] = useState<any>(null)
+  const [auditData, setAuditData] = useState<any>(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/results/${params.job_id}`)
@@ -20,6 +21,15 @@ export default function ResultsPage() {
       .then(setData)
       .catch(console.error)
   }, [params.job_id])
+
+  useEffect(() => {
+    if (data?.downloads?.audit_trail) {
+      fetch(`http://localhost:8000${data.downloads.audit_trail}`)
+        .then(res => res.json())
+        .then(setAuditData)
+        .catch(console.error)
+    }
+  }, [data])
 
   if (!data) return <div className="p-8 text-center">Loading results...</div>
 
@@ -44,10 +54,19 @@ export default function ResultsPage() {
   ]
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#ffc658'];
-  const epsChartData = Object.entries(perColEps).map(([name, value], index) => ({
-    name,
-    value: Number(value),
-  }))
+  const epsChartData = (data.column_summary || [])
+    .filter((c: any) => c.compliance_action === "RETAIN_WITH_NOISE" || perColEps[c.column_name])
+    .map((c: any) => ({
+      name: c.column_name,
+      value: Number(perColEps[c.column_name] || c.epsilon_budget || 0),
+    }))
+
+  const auditGraphData = auditData?.quality?.ks_test_scores ? 
+    Object.keys(auditData.quality.ks_test_scores).map(col => ({
+      column: col,
+      quality: auditData.quality.ks_test_scores[col] * 100,
+      epsilon: auditData.quality.epsilon_summary?.per_column?.[col] || 0
+    })) : []
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
@@ -70,7 +89,7 @@ export default function ResultsPage() {
         {metrics.map((metric) => (
           <Card key={metric.name}>
             <CardHeader>
-              <CardTitle className="text-base text-secondary-foreground">{metric.name}</CardTitle>
+              <CardTitle className="text-base text-[#0081A7]">{metric.name}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className={`text-3xl font-semibold ${metric.color}`}>{metric.value}</p>
@@ -87,17 +106,13 @@ export default function ResultsPage() {
           <CardContent className="h-[350px]">
             {ksChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={ksChartData} layout="vertical" margin={{ left: 40, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#444" />
-                  <XAxis type="number" domain={[0, 100]} stroke="#888" />
-                  <YAxis dataKey="name" type="category" stroke="#888" width={100} tick={{ fontSize: 12 }} />
+                <AreaChart data={ksChartData} margin={{ left: 0, right: 20, top: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#444" />
+                  <XAxis dataKey="name" stroke="#888" tick={{ fontSize: 12 }} />
+                  <YAxis type="number" domain={[0, 100]} stroke="#888" />
                   <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
-                  <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-                    {ksChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.score >= 85 ? "#4caf50" : entry.score >= 65 ? "#ff9800" : "#ff5252"} />
-                    ))}
-                  </Bar>
-                </BarChart>
+                  <Area type="monotone" dataKey="score" stroke="#0081A7" fill="#0081A7" fillOpacity={0.3} />
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No KS Scores Available</div>
@@ -113,15 +128,17 @@ export default function ResultsPage() {
             <div className="grid grid-cols-2 h-full gap-4">
               {epsChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={epsChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                  <BarChart data={epsChartData} layout="vertical" margin={{ left: 40, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#444" />
+                    <XAxis type="number" stroke="#888" />
+                    <YAxis dataKey="name" type="category" stroke="#888" width={100} tick={{ fontSize: 12 }} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} cursor={{fill: 'transparent'}} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
                       {epsChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
-                    <Legend />
-                  </PieChart>
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               ) : (
                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No budget data</div>
@@ -157,6 +174,28 @@ export default function ResultsPage() {
           </CardContent>
         </Card>
       </section>
+
+      {auditGraphData.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Live Audit Trail: Privacy vs Utility Trade-off</CardTitle>
+          </CardHeader>
+          <CardContent className="h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={auditGraphData} margin={{ left: 0, right: 20, top: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#444" />
+                <XAxis dataKey="column" stroke="#888" tick={{ fontSize: 12 }} />
+                <YAxis yAxisId="left" type="number" domain={[0, 100]} stroke="#888" label={{ value: 'Data Quality (KS %)', angle: -90, position: 'insideLeft', fill: '#888' }} />
+                <YAxis yAxisId="right" orientation="right" type="number" stroke="#00C49F" label={{ value: 'Epsilon Budget (ε)', angle: 90, position: 'insideRight', fill: '#00C49F' }} />
+                <Tooltip contentStyle={{ backgroundColor: "#1e1e1e", borderColor: "#444" }} />
+                <Legend />
+                <Bar yAxisId="left" dataKey="quality" name="KS Score (%)" fill="#0081A7" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="epsilon" name="Epsilon (ε)" stroke="#00C49F" strokeWidth={3} dot={{ r: 6 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mt-6">
         <CardHeader>

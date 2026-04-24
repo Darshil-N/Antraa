@@ -1831,6 +1831,44 @@ async def analyze_pattern(job_id: str) -> Dict[str, Any]:
                      f"Pattern analysis complete. Preservation: {comparison.get('preservation_score', 'N/A')}")
     return comparison
 
+@app.get("/api/pattern/distributions/{job_id}")
+async def get_pattern_distributions(job_id: str, column: Optional[str] = None) -> Dict[str, Any]:
+    job_dir    = JOBS_DIR / job_id
+    synth_path = job_dir / "outputs" / "synthetic_data.csv"
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT filename FROM jobs WHERE job_id = ?", [job_id]).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+    input_file = job_dir / "raw_upload" / row[0]
+    
+    if not input_file.exists() or not synth_path.exists():
+        raise HTTPException(status_code=404, detail="Data files missing")
+        
+    df_orig = await asyncio.to_thread(read_dataset, input_file)
+    df_synth = await asyncio.to_thread(pd.read_csv, synth_path)
+    
+    if not column:
+        # Pick the first categorical or object column, fallback to first column
+        cat_cols = df_orig.select_dtypes(include=['object', 'category', 'string']).columns.tolist()
+        if cat_cols:
+            column = cat_cols[0]
+        else:
+            column = df_orig.columns[0]
+            
+    if column not in df_orig.columns or column not in df_synth.columns:
+        raise HTTPException(status_code=400, detail="Column not found")
+        
+    orig_counts = df_orig[column].value_counts().head(10).to_dict()
+    synth_counts = df_synth[column].value_counts().head(10).to_dict()
+    
+    orig_data = [{"name": str(k), "value": int(v)} for k, v in orig_counts.items()]
+    synth_data = [{"name": str(k), "value": int(v)} for k, v in synth_counts.items()]
+    
+    return {"column": column, "original": orig_data, "synthetic": synth_data}
+
 
 @app.get("/api/pattern-report/{job_id}")
 async def get_pattern_report(job_id: str) -> Dict[str, Any]:
