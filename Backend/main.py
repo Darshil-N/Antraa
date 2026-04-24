@@ -14,8 +14,13 @@ import duckdb
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+# ── AI Pipeline Bridge (graceful — falls back if generation/ not installed) ─────
+from generation_bridge import bridge
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -411,7 +416,7 @@ def synthesize_dataframe(real_df: pd.DataFrame, decisions: Dict[str, ColumnDecis
             if source.empty:
                 synth[col] = [None] * row_count
                 continue
-            if action == "MASK":
+            if action == "PSEUDONYMIZE":
                 synth[col] = [f"masked_{uuid.uuid4().hex[:8]}" for _ in range(row_count)]
             elif action == "GENERALIZE":
                 sampled = np.random.choice(source.to_numpy(), size=row_count, replace=True)
@@ -456,31 +461,189 @@ def compute_quality(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> Dict[str, 
     }
 
 
-def generate_certificate(job_id: str, summary: Dict[str, Any], output_dir: Path) -> Path:
+import hashlib
+
+def generate_certificate(job_id: str, summary: Dict[str, Any], output_dir: Path, synth_path: Optional[Path] = None, approval_payload: Optional[ApprovalPayload] = None, quality: Optional[Dict[str, Any]] = None, ai_narrative: Optional[Dict[str, Any]] = None) -> Path:
     pdf_path = output_dir / "compliance_certificate.pdf"
+    
+    # Calculate SHA-256 of synthetic file
+    file_hash = "N/A"
+    if synth_path and synth_path.exists():
+        hasher = hashlib.sha256()
+        with open(synth_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+        file_hash = hasher.hexdigest()
+
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
 
         c = canvas.Canvas(str(pdf_path), pagesize=letter)
-        y = 760
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(72, y, "FairSynth Compliance Certificate")
+        y = 750
+        
+        # Header
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, y, "FairSynth Compliance Certificate")
         y -= 30
+        
         c.setFont("Helvetica", 10)
-        for line in [
-            f"Job ID: {job_id}",
-            f"Generated At: {now_iso()}",
-            f"Source File: {summary.get('source_file')}",
-            f"Rows: {summary.get('rows')}  Columns: {summary.get('columns')}",
-            f"Quality Score: {summary.get('quality_score')}",
-            "This certificate captures processing metadata and privacy actions.",
-        ]:
-            c.drawString(72, y, line)
-            y -= 18
+        c.drawString(50, y, f"Job ID: {job_id}")
+        y -= 15
+        c.drawString(50, y, f"Generated At: {now_iso()}")
+        y -= 15
+        c.drawString(50, y, f"Source File: {summary.get('source_file')}")
+        y -= 15
+        
+        # Calculate synthetic rows
+        synth_rows = "N/A"
+        if synth_path and synth_path.exists():
+            import pandas as pd
+            synth_rows = str(len(pd.read_csv(synth_path)))
+            
+        c.drawString(50, y, f"Rows Generated: {synth_rows} synthetic rows (Source: {summary.get('rows')} rows)")
+        y -= 15
+        c.setFont("Helvetica-Oblique", 8)
+        c.drawString(50, y, "* Note: Synthetic row count is determined by user configuration during the approval phase.")
+        y -= 15
+        c.setFont("Helvetica", 10)
+        c.drawString(50, y, f"Synthetic File SHA-256: {file_hash}")
+        y -= 25
+
+        # AI Narrative Statement
+        if ai_narrative and "certificate_statement" in ai_narrative:
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(50, y, "Official Compliance Statement:")
+            y -= 15
+            c.setFont("Helvetica-Oblique", 10)
+            
+            import textwrap
+            wrapped_statement = textwrap.wrap(ai_narrative.get("certificate_statement", ""), width=90)
+            for line in wrapped_statement:
+                c.drawString(50, y, line)
+                y -= 15
+            y -= 10
+
+        # Quality Metrics
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, "Data Quality & Privacy Risk")
+        y -= 15
+        c.setFont("Helvetica", 10)
+        
+        overall_ks = quality.get("overall_quality_score", 0.0) if quality else summary.get("quality_score", 0.0)
+        c.drawString(50, y, f"Overall Quality Score (KS): {float(overall_ks)*100:.1f}%")
+        
+        if quality and "correlation_similarity" in quality:
+            corr_sim = float(quality['correlation_similarity']) * 100
+            corr_label = "⚠️ POOR" if corr_sim < 50 else "GOOD"
+            c.drawString(300, y, f"Correlation Preserved: {corr_sim:.1f}% ({corr_label})")
+        y -= 15
+        
+        if quality and "privacy_risk_score" in quality:
+            riskScore = float(quality['privacy_risk_score']) * 100
+            riskLabel = "Low (ε > 10)"
+            if riskScore >= 70: riskLabel = "High (No DP applied)"
+            elif riskScore >= 30: riskLabel = "Moderate (ε=1.0 Balanced)"
+            elif riskScore > 0: riskLabel = "Strong (ε < 1.0 Privacy-First)"
+            
+            c.drawString(50, y, f"Privacy Risk Score: {riskScore:.1f}% ({riskLabel})")
+        y -= 20
+        
+        if quality and "ks_test_scores" in quality and quality["ks_test_scores"]:
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(50, y, "Per-Column Quality (KS Scores):")
+            y -= 15
+            c.setFont("Helvetica", 9)
+            ks_items = list(quality["ks_test_scores"].items())
+            
+            # Print in 3 columns
+            for i in range(0, len(ks_items), 3):
+                if y < 50:
+                    c.showPage()
+                    y = 750
+                    c.setFont("Helvetica", 9)
+                
+                col1 = ks_items[i]
+                warning1 = "⚠️ " if col1[1] < 0.70 else ""
+                c.drawString(50, y, f"{warning1}{col1[0]}: {col1[1]:.4f}")
+                
+                if i+1 < len(ks_items):
+                    col2 = ks_items[i+1]
+                    warning2 = "⚠️ " if col2[1] < 0.70 else ""
+                    c.drawString(250, y, f"{warning2}{col2[0]}: {col2[1]:.4f}")
+                    
+                if i+2 < len(ks_items):
+                    col3 = ks_items[i+2]
+                    warning3 = "⚠️ " if col3[1] < 0.70 else ""
+                    c.drawString(450, y, f"{warning3}{col3[0]}: {col3[1]:.4f}")
+                y -= 12
+            y -= 10
+
+        if quality and "correlation_pairs" in quality and quality["correlation_pairs"]:
+            if y < 100:
+                c.showPage()
+                y = 750
+            
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(50, y, "Top Feature Correlations (Similarity Score):")
+            y -= 15
+            c.setFont("Helvetica", 9)
+            
+            pair_items = list(quality["correlation_pairs"].items())
+            
+            # Print in 2 columns
+            for i in range(0, len(pair_items), 2):
+                if y < 50:
+                    c.showPage()
+                    y = 750
+                    c.setFont("Helvetica", 9)
+                
+                pair1 = pair_items[i]
+                c.drawString(50, y, f"{pair1[0]}: {pair1[1]:.4f}")
+                
+                if i+1 < len(pair_items):
+                    pair2 = pair_items[i+1]
+                    c.drawString(300, y, f"{pair2[0]}: {pair2[1]:.4f}")
+                    
+                y -= 12
+            y -= 10
+
+        # Compliance Actions
+        if approval_payload and approval_payload.decisions:
+            if y < 100:
+                c.showPage()
+                y = 750
+                
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, y, "Approved Compliance Actions")
+            y -= 20
+            
+            c.setFont("Helvetica", 9)
+            for d in approval_payload.decisions:
+                if y < 50:
+                    c.showPage()
+                    y = 750
+                    c.setFont("Helvetica", 9)
+                
+                action = d.override_action if d.override_action else "RETAIN"
+                eps_str = f"(ε={d.epsilon_budget})" if action == "RETAIN_WITH_NOISE" else ""
+                
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(50, y, f"Column: {d.column_name}")
+                c.setFont("Helvetica", 9)
+                c.drawString(200, y, f"Action: {action} {eps_str}")
+                y -= 15
+                
+                # We don't have the LLM regulation_id directly in approval_payload.decisions unfortunately,
+                # but we show the action and epsilon budget to satisfy the privacy guarantee requirement.
+                if action == "SUPPRESS":
+                    c.drawString(60, y, "Reason: Column excluded from synthetic dataset entirely to protect privacy.")
+                    y -= 12
+
         c.save()
         return pdf_path
-    except Exception:
+    except Exception as e:
+        print(f"PDF Gen Error: {e}")
         txt_path = output_dir / "compliance_certificate.txt"
         txt = (
             "FairSynth Compliance Certificate\n"
@@ -598,40 +761,69 @@ async def run_core_pipeline(job_id: str) -> None:
         profile = await asyncio.to_thread(profile_dataframe, real_df)
         dump_json(job_dir / "profiled_schema.json", profile)
 
-        conn = get_conn()
-        try:
-            conn.execute("DELETE FROM column_profiles WHERE job_id = ?", [job_id])
-            for col in real_df.columns:
-                c = classify_column(col, real_df[col])
-                conn.execute(
-                    """
-                    INSERT INTO column_profiles (
-                        job_id, column_name, inferred_type, sensitivity_class, confidence_score,
-                        compliance_action, compliance_rule_citation, user_override, user_override_value,
-                        approved, epsilon_budget, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        job_id,
-                        col,
-                        c.inferred_type,
-                        c.sensitivity_class,
-                        c.confidence_score,
-                        c.compliance_action,
-                        c.compliance_rule_citation,
-                        False,
-                        None,
-                        True,
-                        1.0,
-                        now_iso(),
-                    ],
+        # ── AI Classification (if available) or fallback to rule-based ──────────────
+        ai_classifications: Dict[str, Any] = {}
+        if bridge.available:
+            insert_agent_log(job_id, "Profiler Agent", "PROFILING", "Running AI schema profiler (Qwen2.5:7b) + RAG compliance...")
+            await emit_event("pipeline", job_id, "AGENT_LOG", {"message": "AI profiler + RAG compliance running..."})
+            try:
+                ai_classifications = await asyncio.to_thread(
+                    bridge.ai_classify_columns, real_df, job_id
                 )
-        finally:
-            conn.close()
+                insert_agent_log(job_id, "Profiler Agent", "PROFILING", f"AI classified {len(ai_classifications)} columns")
+            except Exception as e:
+                insert_agent_log(job_id, "Profiler Agent", "PROFILING", f"AI classification failed: {e} — using fallback", "WARNING")
+                ai_classifications = {}
 
         update_job_phase(job_id, "COMPLIANCE")
         insert_agent_log(job_id, "RAG Compliance Agent", "COMPLIANCE", "Mapped sensitive columns to actions")
         await emit_event("pipeline", job_id, "PHASE_CHANGE", {"phase": "COMPLIANCE"})
+
+        conn = get_conn()
+        try:
+            conn.execute("DELETE FROM column_profiles WHERE job_id = ?", [job_id])
+            for col in real_df.columns:
+                if col in ai_classifications:
+                    # Use AI classification
+                    ai = ai_classifications[col]
+                    conn.execute(
+                        """
+                        INSERT INTO column_profiles (
+                            job_id, column_name, inferred_type, sensitivity_class, confidence_score,
+                            compliance_action, compliance_rule_citation, user_override, user_override_value,
+                            approved, epsilon_budget, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            job_id, col,
+                            ai.get("inferred_type", "text"),
+                            ai.get("sensitivity_class", "SAFE"),
+                            ai.get("confidence_score", 0.8),
+                            ai.get("compliance_action", "RETAIN"),
+                            ai.get("compliance_rule_citation", "N/A"),
+                            False, None, True, 1.0, now_iso(),
+                        ],
+                    )
+                else:
+                    # Fallback: rule-based classification
+                    c = classify_column(col, real_df[col])
+                    conn.execute(
+                        """
+                        INSERT INTO column_profiles (
+                            job_id, column_name, inferred_type, sensitivity_class, confidence_score,
+                            compliance_action, compliance_rule_citation, user_override, user_override_value,
+                            approved, epsilon_budget, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            job_id, col,
+                            c.inferred_type, c.sensitivity_class, c.confidence_score,
+                            c.compliance_action, c.compliance_rule_citation,
+                            False, None, True, 1.0, now_iso(),
+                        ],
+                    )
+        finally:
+            conn.close()
 
         await emit_event(
             "pipeline",
@@ -640,18 +832,36 @@ async def run_core_pipeline(job_id: str) -> None:
             {
                 "columns": profile["column_names"],
                 "quality_score": profile["quality_score"],
+                "ai_classifications": ai_classifications,
             },
         )
 
+        # ── Wait for Human Approval ──────────────────────────────────────────────────
         update_job_phase(job_id, "AWAITING_APPROVAL")
-        insert_agent_log(job_id, "Orchestrator", "AWAITING_APPROVAL", "Waiting for user approval payload")
+        insert_agent_log(job_id, "Orchestrator", "AWAITING_APPROVAL", "Paused for human-in-the-loop approval gate")
         await emit_event("pipeline", job_id, "AWAITING_APPROVAL", {"job_id": job_id})
 
-        approval_event = asyncio.Event()
-        PIPELINE_APPROVAL_EVENTS[job_id] = approval_event
-        await approval_event.wait()
+        event = asyncio.Event()
+        PIPELINE_APPROVAL_EVENTS[job_id] = event
+        await event.wait()
 
-        approval_payload = PIPELINE_APPROVAL_PAYLOADS.get(job_id)
+        approval_payload = PIPELINE_APPROVAL_PAYLOADS.pop(job_id)
+        
+        # Hydrate missing overrides with the original AI suggestion from DB
+        conn = get_conn()
+        try:
+            db_cols = conn.execute(
+                "SELECT column_name, compliance_action FROM column_profiles WHERE job_id = ?",
+                [job_id],
+            ).fetchall()
+            orig_actions = {c[0]: c[1] for c in db_cols}
+        finally:
+            conn.close()
+            
+        for d in approval_payload.decisions:
+            if not d.override_action:
+                d.override_action = orig_actions.get(d.column_name, "RETAIN")
+        
         if not approval_payload:
             raise RuntimeError("Approval payload was not supplied")
 
@@ -684,7 +894,32 @@ async def run_core_pipeline(job_id: str) -> None:
         insert_agent_log(job_id, "Generator", "GENERATING", "Generating synthetic dataset")
 
         target_rows = approval_payload.synthetic_rows or len(real_df)
-        synth_df = await asyncio.to_thread(synthesize_dataframe, real_df, decisions, target_rows)
+
+        # ── AI Synthesis (SDV + DP) or fallback to bootstrap sampling ───────────────
+        ai_quality: Dict[str, Any] = {}
+        if bridge.available:
+            insert_agent_log(job_id, "Generator", "GENERATING", "Running SDV GaussianCopula + Diffprivlib DP synthesis...")
+            try:
+                output_dir = JOBS_DIR / job_id / "outputs"
+                synth_df, ai_quality = await asyncio.to_thread(
+                    bridge.ai_run_synthesis,
+                    real_df,
+                    decisions,
+                    target_rows,
+                    job_id,
+                    output_dir,
+                )
+                insert_agent_log(job_id, "Generator", "GENERATING", f"AI synthesis complete: {len(synth_df)} rows, quality={ai_quality.get('overall_quality_score', 0):.1%}")
+            except Exception as e:
+                insert_agent_log(job_id, "Generator", "GENERATING", f"AI synthesis failed: {e} — using fallback", "WARNING")
+                synth_df = pd.DataFrame()
+                ai_quality = {}
+        else:
+            synth_df = pd.DataFrame()
+
+        # Fallback to built-in bootstrap sampling if AI synthesis unavailable/failed
+        if synth_df.empty:
+            synth_df = await asyncio.to_thread(synthesize_dataframe, real_df, decisions, target_rows)
 
         synth_path = outputs_dir / "synthetic_data.csv"
         await asyncio.to_thread(synth_df.to_csv, synth_path, index=False)
@@ -693,7 +928,22 @@ async def run_core_pipeline(job_id: str) -> None:
         await emit_event("pipeline", job_id, "PHASE_CHANGE", {"phase": "VALIDATING"})
         insert_agent_log(job_id, "Validation Reporter", "VALIDATING", "Calculating data quality metrics")
 
-        quality = await asyncio.to_thread(compute_quality, real_df, synth_df)
+        # Use AI quality scores if available, else compute from scratch
+        if ai_quality:
+            quality = ai_quality
+        else:
+            quality = await asyncio.to_thread(compute_quality, real_df, synth_df)
+
+        # AI Validation narrative (Llama3.2:3b)
+        ai_narrative: Dict[str, Any] = {}
+        if bridge.available:
+            try:
+                ai_narrative = await asyncio.to_thread(
+                    bridge.ai_validate, job_id, quality, approval_payload
+                )
+                insert_agent_log(job_id, "Validation Reporter", "VALIDATING", f"AI validation: {ai_narrative.get('quality_rating', 'N/A')}")
+            except Exception as e:
+                insert_agent_log(job_id, "Validation Reporter", "VALIDATING", f"AI validation failed: {e}", "WARNING")
 
         conn = get_conn()
         try:
@@ -721,7 +971,7 @@ async def run_core_pipeline(job_id: str) -> None:
             "profile_summary": {
                 "rows": int(profile["rows"]),
                 "columns": int(profile["columns"]),
-                "quality_score": profile["quality_score"],
+                "completeness_score": profile["quality_score"],
             },
             "quality": quality,
             "note": "Core backend pipeline execution record",
@@ -739,6 +989,10 @@ async def run_core_pipeline(job_id: str) -> None:
                 "quality_score": quality["overall_quality_score"],
             },
             outputs_dir,
+            synth_path,
+            approval_payload,
+            quality,
+            ai_narrative
         )
 
         latest_result = {
@@ -747,7 +1001,7 @@ async def run_core_pipeline(job_id: str) -> None:
                 "source_file": filename,
                 "rows": int(profile["rows"]),
                 "columns": int(profile["columns"]),
-                "quality_score": float(quality["overall_quality_score"] * 100.0),
+                "completeness_score": float(profile["quality_score"]),
             },
             "missing_values": profile["missing_values"],
             "missing_percent": profile["missing_percent"],
@@ -805,15 +1059,32 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
         if df.empty:
             raise RuntimeError("Bias audit input is empty")
 
+        # ── AI Bias Column Detection (Llama3.2:3b) or fallback keyword detection ───
         protected_candidates = []
         outcome_candidates = []
 
-        for col in df.columns:
-            lc = col.lower()
-            if any(k in lc for k in ["gender", "sex", "race", "ethnicity", "age", "religion", "disability", "nationality"]):
-                protected_candidates.append({"column": col, "confidence": round(random.uniform(0.85, 0.98), 2)})
-            if any(k in lc for k in ["approved", "hired", "decision", "label", "target", "outcome", "passed"]):
-                outcome_candidates.append({"column": col, "confidence": round(random.uniform(0.82, 0.97), 2)})
+        if bridge.available:
+            insert_agent_log(audit_id, "Bias Profiler Agent", "PROFILING", "Running AI bias column detection (Llama3.2:3b)...")
+            await emit_event("bias", audit_id, "AGENT_LOG", {"message": "AI bias profiler running..."})
+            try:
+                protected_candidates, outcome_candidates = await asyncio.to_thread(
+                    bridge.ai_detect_bias_columns, df, audit_id
+                )
+                insert_agent_log(audit_id, "Bias Profiler Agent", "PROFILING", f"AI detected {len(protected_candidates)} protected attrs, {len(outcome_candidates)} outcomes")
+            except Exception as e:
+                insert_agent_log(audit_id, "Bias Profiler Agent", "PROFILING", f"AI detection failed: {e} — using fallback", "WARNING")
+
+        # Fallback: keyword-based detection
+        if not protected_candidates:
+            for col in df.columns:
+                lc = col.lower()
+                if any(k in lc for k in ["gender", "sex", "race", "ethnicity", "age", "religion", "disability", "nationality"]):
+                    protected_candidates.append({"column": col, "confidence": round(random.uniform(0.85, 0.98), 2)})
+        if not outcome_candidates:
+            for col in df.columns:
+                lc = col.lower()
+                if any(k in lc for k in ["approved", "hired", "decision", "label", "target", "outcome", "passed"]):
+                    outcome_candidates.append({"column": col, "confidence": round(random.uniform(0.82, 0.97), 2)})
 
         if not protected_candidates and len(df.columns) > 0:
             protected_candidates.append({"column": df.columns[0], "confidence": 0.6})
@@ -846,93 +1117,83 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
 
         findings = []
 
-        for p_col in confirm_payload.protected_attributes:
-            if p_col not in df.columns:
-                continue
-            for o_col in confirm_payload.outcome_columns:
-                if o_col not in df.columns:
+        # ── AI Bias Metrics (AIF360 + Llama3.2:3b) or fallback numpy metrics ───────────
+        if bridge.available:
+            insert_agent_log(audit_id, "Bias Metrics Agent", "COMPUTING", "Running AIF360 + SciPy bias metrics + AI interpretation...")
+            try:
+                findings = await asyncio.to_thread(
+                    bridge.ai_compute_bias_metrics,
+                    df,
+                    confirm_payload.protected_attributes,
+                    confirm_payload.outcome_columns,
+                    audit_id,
+                )
+                insert_agent_log(audit_id, "Bias Metrics Agent", "COMPUTING", f"AI computed {len(findings)} bias findings")
+            except Exception as e:
+                insert_agent_log(audit_id, "Bias Metrics Agent", "COMPUTING", f"AI bias metrics failed: {e} — using fallback", "WARNING")
+                findings = []
+
+        # Fallback: original numpy bias computation
+        if not findings:
+            for p_col in confirm_payload.protected_attributes:
+                if p_col not in df.columns:
                     continue
+                for o_col in confirm_payload.outcome_columns:
+                    if o_col not in df.columns:
+                        continue
 
-                series = df[p_col].astype(str).fillna("<NULL>")
-                outcome = df[o_col]
+                    series = df[p_col].astype(str).fillna("<NULL>")
+                    outcome = df[o_col]
 
-                if pd.api.types.is_numeric_dtype(outcome):
-                    threshold = float(pd.to_numeric(outcome, errors="coerce").median())
-                    pos = pd.to_numeric(outcome, errors="coerce") >= threshold
-                else:
-                    as_str = outcome.astype(str).str.lower()
-                    pos = as_str.isin(["1", "true", "yes", "approved", "hired", "pass", "positive"])
-                    if pos.sum() == 0:
-                        top_label = as_str.value_counts().index[0] if not as_str.empty else ""
-                        pos = as_str == top_label
-
-                rates = {}
-                counts = {}
-                for group in sorted(series.unique().tolist()):
-                    mask = series == group
-                    n = int(mask.sum())
-                    counts[group] = n
-                    if n == 0:
-                        rates[group] = 0.0
+                    if pd.api.types.is_numeric_dtype(outcome):
+                        threshold = float(pd.to_numeric(outcome, errors="coerce").median())
+                        pos = pd.to_numeric(outcome, errors="coerce") >= threshold
                     else:
-                        rates[group] = float(pos[mask].mean())
+                        as_str = outcome.astype(str).str.lower()
+                        pos = as_str.isin(["1", "true", "yes", "approved", "hired", "pass", "positive"])
+                        if pos.sum() == 0:
+                            top_label = as_str.value_counts().index[0] if not as_str.empty else ""
+                            pos = as_str == top_label
 
-                if not rates:
-                    continue
+                    rates = {}
+                    counts = {}
+                    for group in sorted(series.unique().tolist()):
+                        mask = series == group
+                        n = int(mask.sum())
+                        counts[group] = n
+                        rates[group] = float(pos[mask].mean()) if n > 0 else 0.0
 
-                rate_values = list(rates.values())
-                max_rate = max(rate_values)
-                min_rate = min(rate_values)
-                dpd = float(max_rate - min_rate)
-                diratio = float(min_rate / max_rate) if max_rate > 0 else 0.0
-                spd = float(min_rate - max_rate)
+                    if not rates:
+                        continue
 
-                if diratio < 0.6 or dpd > 0.3:
-                    severity = "CRITICAL"
-                elif diratio < 0.8 or dpd > 0.2:
-                    severity = "HIGH"
-                elif diratio < 0.9 or dpd > 0.1:
-                    severity = "MEDIUM"
-                else:
-                    severity = "LOW"
+                    rate_values = list(rates.values())
+                    max_rate = max(rate_values)
+                    min_rate = min(rate_values)
+                    dpd = float(max_rate - min_rate)
+                    diratio = float(min_rate / max_rate) if max_rate > 0 else 0.0
+                    spd = float(min_rate - max_rate)
 
-                narration = (
-                    f"{p_col} vs {o_col}: Disparate Impact Ratio={diratio:.3f}, "
-                    f"Demographic Parity Difference={dpd:.3f}. "
-                    "Review whether group outcome gaps are legally justified."
-                )
+                    if diratio < 0.6 or dpd > 0.3:   severity = "CRITICAL"
+                    elif diratio < 0.8 or dpd > 0.2: severity = "HIGH"
+                    elif diratio < 0.9 or dpd > 0.1: severity = "MEDIUM"
+                    else:                              severity = "LOW"
 
-                findings.extend(
-                    [
-                        {
-                            "metric_name": "Demographic Parity Difference",
-                            "metric_value": dpd,
-                            "severity": severity,
-                            "protected_attribute_column": p_col,
-                            "outcome_column": o_col,
-                            "affected_groups": rates,
-                            "interpreter_narration": narration,
-                        },
-                        {
-                            "metric_name": "Disparate Impact Ratio",
-                            "metric_value": diratio,
-                            "severity": severity,
-                            "protected_attribute_column": p_col,
-                            "outcome_column": o_col,
-                            "affected_groups": rates,
-                            "interpreter_narration": narration,
-                        },
-                        {
-                            "metric_name": "Statistical Parity Difference",
-                            "metric_value": spd,
-                            "severity": severity,
-                            "protected_attribute_column": p_col,
-                            "outcome_column": o_col,
-                            "affected_groups": rates,
-                            "interpreter_narration": narration,
-                        },
-                    ]
-                )
+                    narration = (
+                        f"{p_col} vs {o_col}: DIR={diratio:.3f}, DPD={dpd:.3f}. "
+                        "Review whether group outcome gaps are legally justified."
+                    )
+                    findings.extend([
+                        {"metric_name": "Demographic Parity Difference", "metric_value": dpd,
+                         "severity": severity, "protected_attribute_column": p_col,
+                         "outcome_column": o_col, "affected_groups": rates, "interpreter_narration": narration},
+                        {"metric_name": "Disparate Impact Ratio", "metric_value": diratio,
+                         "severity": severity, "protected_attribute_column": p_col,
+                         "outcome_column": o_col, "affected_groups": rates, "interpreter_narration": narration},
+                        {"metric_name": "Statistical Parity Difference", "metric_value": spd,
+                         "severity": severity, "protected_attribute_column": p_col,
+                         "outcome_column": o_col, "affected_groups": rates, "interpreter_narration": narration},
+                    ])
+
 
         conn = get_conn()
         try:
@@ -1008,11 +1269,38 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
 
 app = FastAPI(title="FairSynth Backend", version="1.0.0")
 
+# Allow the test frontend (file:// or localhost:*) to connect during dev
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve the frontend folder at /ui (optional convenience)
+_FRONTEND_DIR = BASE_DIR.parent / "frontend"
+if _FRONTEND_DIR.exists():
+    app.mount("/ui", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="ui")
+
 
 @app.on_event("startup")
 async def startup_event() -> None:
     init_dirs()
     init_db()
+    # Log bridge status at startup
+    status = bridge.status()
+    if status["ai_available"]:
+        print(f"[Bridge] ✅ AI pipeline available (generation/ loaded)")
+    else:
+        print(f"[Bridge] ⚠️  AI pipeline unavailable: {status['import_error']}")
+        print(f"[Bridge]    Falling back to built-in rule-based pipeline.")
+
+
+@app.get("/api/bridge-status")
+async def bridge_status() -> Dict[str, Any]:
+    """Health check for the generation/ AI bridge."""
+    return bridge.status()
 
 
 @app.get("/api/health")

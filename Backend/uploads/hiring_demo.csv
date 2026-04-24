@@ -1,0 +1,201 @@
+applicant_id,age,gender,race,education_level,years_experience,interview_score,hiring_decision
+APP-1000,45,Male,White,Bachelor,11,9.0,1
+APP-1001,32,Male,Asian,PhD,3,6.5,0
+APP-1002,29,Male,Hispanic,PhD,1,7.8,0
+APP-1003,41,Male,Black,High School,4,7.1,1
+APP-1004,46,Male,White,Bachelor,12,8.9,1
+APP-1005,46,Male,White,Bachelor,13,8.5,0
+APP-1006,50,Male,White,PhD,9,8.5,1
+APP-1007,39,Male,Hispanic,Master,3,7.4,0
+APP-1008,39,Male,Black,Bachelor,12,7.2,1
+APP-1009,23,Male,Hispanic,Master,9,6.8,0
+APP-1010,37,Male,White,PhD,7,6.2,1
+APP-1011,54,Male,Asian,PhD,12,8.6,1
+APP-1012,25,Male,Hispanic,High School,14,8.4,1
+APP-1013,54,Male,White,Bachelor,4,9.0,0
+APP-1014,35,Male,White,Master,3,9.0,1
+APP-1015,42,Male,White,High School,10,7.7,1
+APP-1016,41,Male,White,Bachelor,5,8.3,1
+APP-1017,29,Male,Black,High School,5,8.8,0
+APP-1018,28,Male,White,PhD,3,8.5,1
+APP-1019,24,Male,White,Bachelor,12,6.7,0
+APP-1020,38,Male,Black,High School,9,7.4,1
+APP-1021,54,Male,White,High School,4,6.4,1
+APP-1022,33,Male,White,Master,11,8.9,1
+APP-1023,43,Male,White,High School,5,7.8,1
+APP-1024,43,Male,White,Bachelor,4,6.7,0
+APP-1025,51,Male,Hispanic,Bachelor,5,8.0,1
+APP-1026,29,Male,White,Master,7,7.9,1
+APP-1027,48,Male,Black,Bachelor,9,7.1,0
+APP-1028,48,Male,Black,PhD,7,6.3,1
+APP-1029,42,Male,White,Bachelor,13,8.0,1
+APP-1030,51,Male,Black,Bachelor,5,7.6,0
+APP-1031,54,Male,White,High School,10,8.3,1
+APP-1032,49,Male,White,High School,10,7.6,1
+APP-1033,54,Male,Asian,Bachelor,7,8.6,0
+APP-1034,26,Male,Asian,Master,14,7.7,1
+APP-1035,40,Male,Hispanic,High School,10,7.7,1
+APP-1036,25,Male,White,Master,5,8.6,1
+APP-1037,38,Male,White,Bachelor,3,7.2,0
+APP-1038,49,Male,Black,Bachelor,7,6.4,1
+APP-1039,51,Male,White,PhD,13,6.1,1
+APP-1040,50,Male,White,High School,11,8.3,0
+APP-1041,27,Male,White,Bachelor,11,7.9,0
+APP-1042,45,Male,White,PhD,2,8.1,1
+APP-1043,50,Male,Asian,High School,12,6.6,1
+APP-1044,52,Male,White,Bachelor,9,6.4,1
+APP-1045,54,Male,Black,Bachelor,10,6.0,0
+APP-1046,42,Male,White,High School,10,7.1,1
+APP-1047,53,Male,Black,High School,12,7.8,1
+APP-1048,44,Male,Black,High School,1,7.2,0
+APP-1049,54,Male,White,Bachelor,13,7.3,0
+APP-1050,24,Male,Asian,Bachelor,6,8.7,1
+APP-1051,39,Male,Hispanic,PhD,7,7.0,0
+APP-1052,46,Male,Asian,Master,14,7.5,1
+APP-1053,52,Male,Hispanic,High School,13,8.4,0
+APP-1054,24,Male,Black,Bachelor,8,7.2,1
+APP-1055,45,Male,Asian,Bachelor,10,7.9,1
+APP-1056,53,Male,White,High School,9,8.6,0
+APP-1057,43,Male,White,Master,2,8.8,1
+APP-1058,44,Male,White,High School,11,6.4,1
+APP-1059,23,Male,White,Master,10,8.8,0
+APP-1060,48,Male,White,Bachelor,2,7.5,0
+APP-1061,23,Male,White,Master,5,6.8,1
+APP-1062,47,Male,Hispanic,PhD,13,7.4,1
+APP-1063,38,Male,White,Bachelor,5,8.9,1
+APP-1064,54,Male,White,PhD,6,7.5,1
+APP-1065,30,Male,Black,High School,3,7.0,1
+APP-1066,50,Male,White,High School,8,7.9,1
+APP-1067,47,Male,Hispanic,High School,13,6.7,0
+APP-1068,46,Male,White,Master,1,6.2,1
+APP-1069,45,Male,Asian,Bachelor,6,6.4,1
+APP-1070,34,Male,Hispanic,High School,4,6.4,1
+APP-1071,28,Male,White,High School,1,6.5,0
+APP-1072,41,Male,White,Bachelor,7,6.4,1
+APP-1073,22,Male,Hispanic,High School,9,7.9,1
+APP-1074,29,Male,Hispanic,PhD,13,6.5,1
+APP-1075,37,Male,Hispanic,Bachelor,4,7.0,1
+APP-1076,35,Male,Hispanic,Bachelor,4,8.7,1
+APP-1077,33,Male,White,Bachelor,6,7.4,0
+APP-1078,44,Male,White,PhD,12,8.0,0
+APP-1079,36,Male,White,Bachelor,3,6.5,1
+APP-1080,49,Male,Hispanic,PhD,13,6.6,1
+APP-1081,23,Male,Black,Bachelor,12,6.1,0
+APP-1082,53,Male,White,Master,6,6.5,0
+APP-1083,44,Male,White,High School,7,6.8,1
+APP-1084,43,Male,White,Master,11,6.5,1
+APP-1085,46,Male,White,High School,10,6.3,1
+APP-1086,43,Male,Hispanic,PhD,10,6.4,1
+APP-1087,43,Male,Black,Master,3,7.4,0
+APP-1088,27,Male,Hispanic,Bachelor,7,6.6,0
+APP-1089,36,Male,White,High School,14,7.1,0
+APP-1090,54,Male,White,High School,3,7.5,1
+APP-1091,29,Male,Hispanic,Master,13,8.1,1
+APP-1092,26,Male,Hispanic,PhD,13,6.1,0
+APP-1093,25,Male,Black,Master,2,8.4,0
+APP-1094,27,Male,Hispanic,PhD,12,7.9,1
+APP-1095,53,Male,White,PhD,14,6.2,0
+APP-1096,51,Male,Black,High School,10,8.6,0
+APP-1097,37,Male,White,Master,4,8.8,1
+APP-1098,34,Male,White,Master,12,6.2,1
+APP-1099,51,Male,White,PhD,8,6.8,1
+APP-1100,40,Female,White,Master,13,8.4,1
+APP-1101,38,Female,Black,Bachelor,9,8.2,1
+APP-1102,40,Female,White,Bachelor,7,6.6,0
+APP-1103,49,Female,Black,Master,1,6.6,1
+APP-1104,47,Female,Asian,Master,3,7.1,1
+APP-1105,47,Female,White,PhD,13,7.5,0
+APP-1106,44,Female,White,Bachelor,12,7.9,0
+APP-1107,30,Female,Hispanic,Bachelor,14,7.1,0
+APP-1108,33,Female,White,High School,9,7.4,1
+APP-1109,22,Female,White,PhD,12,8.2,1
+APP-1110,22,Female,White,High School,1,6.1,0
+APP-1111,53,Female,White,Bachelor,9,6.8,0
+APP-1112,46,Female,Asian,PhD,8,8.1,1
+APP-1113,22,Female,Hispanic,Master,1,8.7,0
+APP-1114,37,Female,Black,PhD,6,7.5,1
+APP-1115,26,Female,Hispanic,Master,5,7.6,1
+APP-1116,43,Female,Hispanic,Master,6,6.3,0
+APP-1117,50,Female,White,PhD,10,7.3,0
+APP-1118,24,Female,Hispanic,Master,12,7.6,0
+APP-1119,33,Female,Black,High School,13,6.7,0
+APP-1120,47,Female,Hispanic,Bachelor,13,6.8,0
+APP-1121,37,Female,Hispanic,Master,13,7.1,0
+APP-1122,43,Female,White,High School,5,6.1,1
+APP-1123,50,Female,White,Master,6,7.0,0
+APP-1124,35,Female,White,Bachelor,5,6.6,1
+APP-1125,49,Female,White,High School,11,7.0,0
+APP-1126,26,Female,Hispanic,Bachelor,12,6.4,1
+APP-1127,51,Female,Hispanic,Bachelor,5,8.7,0
+APP-1128,26,Female,White,High School,4,7.8,1
+APP-1129,33,Female,Black,High School,3,8.0,0
+APP-1130,37,Female,White,High School,3,8.4,0
+APP-1131,47,Female,White,PhD,4,7.5,0
+APP-1132,47,Female,White,High School,9,6.3,1
+APP-1133,42,Female,White,High School,2,7.6,0
+APP-1134,54,Female,Asian,High School,9,7.8,1
+APP-1135,51,Female,White,High School,1,8.2,0
+APP-1136,44,Female,Black,Master,14,7.3,1
+APP-1137,31,Female,Hispanic,PhD,1,6.4,1
+APP-1138,26,Female,White,Bachelor,5,6.9,1
+APP-1139,52,Female,Asian,High School,6,7.1,0
+APP-1140,31,Female,Asian,Master,6,7.9,0
+APP-1141,40,Female,White,Master,3,7.7,1
+APP-1142,53,Female,White,Master,7,7.1,0
+APP-1143,22,Female,White,Bachelor,9,9.0,0
+APP-1144,26,Female,White,High School,11,7.8,0
+APP-1145,25,Female,White,PhD,12,6.7,0
+APP-1146,37,Female,Black,PhD,10,6.3,0
+APP-1147,45,Female,Black,Master,8,6.5,0
+APP-1148,37,Female,White,Bachelor,6,6.7,1
+APP-1149,23,Female,White,Bachelor,12,6.5,1
+APP-1150,49,Female,Asian,Bachelor,8,6.6,0
+APP-1151,53,Female,White,PhD,12,6.9,0
+APP-1152,48,Female,White,Master,5,6.5,0
+APP-1153,41,Female,White,High School,8,8.7,1
+APP-1154,45,Female,Asian,PhD,10,6.2,0
+APP-1155,33,Female,White,Master,12,7.6,0
+APP-1156,54,Female,Black,Master,4,7.2,1
+APP-1157,54,Female,Hispanic,High School,10,8.9,1
+APP-1158,33,Female,White,High School,8,6.3,0
+APP-1159,24,Female,Hispanic,High School,10,7.2,0
+APP-1160,22,Female,White,Bachelor,12,8.9,1
+APP-1161,54,Female,Black,High School,2,8.6,1
+APP-1162,31,Female,Black,Master,12,8.5,1
+APP-1163,50,Female,Black,High School,12,6.8,0
+APP-1164,34,Female,White,Master,5,6.5,1
+APP-1165,33,Female,Hispanic,PhD,9,8.0,1
+APP-1166,52,Female,White,Bachelor,4,8.8,0
+APP-1167,23,Female,White,PhD,11,7.7,1
+APP-1168,44,Female,White,PhD,6,7.7,0
+APP-1169,38,Female,Black,Master,1,6.8,1
+APP-1170,47,Female,Black,PhD,9,8.3,1
+APP-1171,29,Female,White,Master,1,6.6,1
+APP-1172,50,Female,Black,High School,5,7.0,0
+APP-1173,47,Female,White,High School,4,7.3,0
+APP-1174,31,Female,Black,Master,13,7.5,0
+APP-1175,47,Female,White,High School,12,6.7,0
+APP-1176,28,Female,Black,Bachelor,13,6.3,0
+APP-1177,25,Female,White,PhD,13,7.8,1
+APP-1178,32,Female,Asian,Bachelor,14,6.9,1
+APP-1179,50,Female,White,PhD,3,7.7,0
+APP-1180,46,Female,White,High School,13,6.5,1
+APP-1181,42,Female,White,Bachelor,6,7.4,1
+APP-1182,31,Female,Asian,High School,2,7.6,1
+APP-1183,30,Female,Hispanic,PhD,3,6.2,1
+APP-1184,45,Female,White,Master,5,7.0,1
+APP-1185,39,Female,Black,Master,9,6.4,0
+APP-1186,53,Female,Hispanic,Bachelor,2,6.2,0
+APP-1187,45,Female,Black,High School,10,9.0,0
+APP-1188,44,Female,Black,High School,8,7.0,0
+APP-1189,53,Female,White,Bachelor,14,8.4,1
+APP-1190,33,Female,White,Master,2,6.8,1
+APP-1191,34,Female,Hispanic,PhD,11,8.0,0
+APP-1192,44,Female,Asian,Bachelor,13,8.3,0
+APP-1193,46,Female,Black,PhD,5,7.8,1
+APP-1194,51,Female,White,Master,7,7.4,0
+APP-1195,38,Female,White,High School,8,7.2,0
+APP-1196,41,Female,Hispanic,Master,1,7.0,0
+APP-1197,46,Female,Hispanic,Bachelor,6,8.8,0
+APP-1198,43,Female,Hispanic,High School,1,8.5,1
+APP-1199,34,Female,Hispanic,Bachelor,2,8.9,0

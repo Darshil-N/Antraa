@@ -1,0 +1,46 @@
+# ── LLM & Agent Orchestration ─────────────────────────────────────────────────
+langgraph>=0.2.0
+langgraph-checkpoint>=0.2.0
+pydantic-settings>=2.0.0
+langchain-ollama>=0.1.0
+langchain-core>=0.2.0
+ollama>=0.2.0
+
+# ── Vector Database ────────────────────────────────────────────────────────────
+chromadb>=0.5.0
+
+# ── Synthetic Data Generation ──────────────────────────────────────────────────
+sdv>=1.14.0
+sdmetrics>=0.14.0
+
+# ── Differential Privacy ──────────────────────────────────────────────────────
+diffprivlib>=0.6.0
+
+# ── Bias Detection ────────────────────────────────────────────────────────────
+aif360>=0.6.0
+scipy>=1.11.0
+
+# ── Data Tools ────────────────────────────────────────────────────────────────
+duckdb>=0.10.0
+pandas>=2.1.0
+numpy>=1.26.0
+pyarrow>=14.0.0
+faker>=24.0.0
+
+# ── Validation ────────────────────────────────────────────────────────────────
+pydantic>=2.5.0
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+reportlab>=4.1.0
+
+# ── API (consumed by FastAPI layer later) ─────────────────────────────────────
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+websockets>=12.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+tenacity>=8.2.0
+rich>=13.7.0
+watchdog>=4.0.0
