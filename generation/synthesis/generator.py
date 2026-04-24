@@ -243,6 +243,10 @@ def run_synthesis(
     # it ignores the discrete_columns hint and applies continuous activations.
     # Casting to string forces the Gumbel-Softmax path unconditionally.
     original_dtypes: dict[str, str] = {}
+    # Capture dtypes for ALL training columns — needed to restore continuous ints too
+    all_original_dtypes: dict[str, str] = {
+        col: str(df_train[col].dtype) for col in df_train.columns
+    }
     for col in discrete_columns:
         if col in df_train.columns:
             original_dtypes[col] = str(df_train[col].dtype)
@@ -325,6 +329,27 @@ def run_synthesis(
             # If original was string/object — leave as-is (already string)
         except Exception as restore_err:
             log.warning(f"  Could not restore dtype for {col} → {orig_dtype}: {restore_err}")
+
+    # ── Step 9b: Restore continuous integer columns ───────────────────────────
+    # Columns NOT in discrete_columns are passed through DP-CTGAN as floats.
+    # If the original was integer-typed (age, years_experience, etc.) the GAN
+    # outputs floats like 22.259. Round and cast them back.
+    for col, orig_dtype in all_original_dtypes.items():
+        if col in original_dtypes:  # Already handled in Step 9
+            continue
+        if col not in df_synthetic.columns:
+            continue
+        if pd.api.types.is_integer_dtype(orig_dtype):
+            try:
+                df_synthetic[col] = (
+                    pd.to_numeric(df_synthetic[col], errors="coerce")
+                    .round()
+                    .fillna(0)
+                    .astype(orig_dtype)
+                )
+                log.info(f"  Rounded continuous int column: {col} ({orig_dtype})")
+            except Exception as round_err:
+                log.warning(f"  Could not round {col} to {orig_dtype}: {round_err}")
 
     # ── Step 10: Clamp to domain bounds (prevents impossible values) ─────────
     log.info("Applying domain bounds clamping...")
@@ -450,7 +475,16 @@ def _compute_quality(df_real: pd.DataFrame, df_synth: pd.DataFrame,
                 score_val = row.get("Score", 0.0)
                 if pd.isna(score_val):
                     score_val = 0.0
-                ks_scores[row["Column"]] = round(float(score_val), 4)
+                col_label = row["Column"]
+                # SDMetrics uses different metrics per dtype:
+                #   - KSComplement  → numerical columns
+                #   - TVComplement  → categorical/string columns
+                # We label both but keep the same dict so the certificate
+                # shows quality for ALL columns, not just numeric ones.
+                metric = row.get("Metric", "")
+                if isinstance(metric, str) and "TVComplement" in metric:
+                    col_label = f"{col_label} (TVD)"
+                ks_scores[col_label] = round(float(score_val), 4)
 
         # Per-pair correlation scores (worst 10 — most useful for surfacing problems)
         corr_pairs: dict = {}

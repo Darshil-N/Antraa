@@ -50,6 +50,9 @@ try:
     from agents.bias_metrics_agent import run_bias_metrics_agent         # noqa: E402
     from agents.bias_interpreter_agent import run_bias_interpreter_agent # noqa: E402
     from agents.schemas import ProfilerOutput, ColumnProfile             # noqa: E402
+    from agents.pattern_analyst_agent import (                           # noqa: E402
+        analyze_dataset_pattern, compare_patterns
+    )
     from synthesis.generator import run_synthesis                        # noqa: E402
     AI_AVAILABLE = True
     os.chdir(_ORIGINAL_CWD)
@@ -200,9 +203,49 @@ class GenerationBridge:
         narrative = run_validator_agent(job_id, quality_scores, approval_dict)
         return narrative.model_dump()
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # ───────────────────────────────────────────────────────────────────────────
+    # PATTERN ANALYSIS PIPELINE (independent of synthesis — blind LLM analysis)
+    # ───────────────────────────────────────────────────────────────────────────
+
+    def ai_analyze_patterns(
+        self,
+        df_original: pd.DataFrame,
+        df_synthetic: pd.DataFrame,
+        job_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Run the blind pattern analysis on both datasets and compare them.
+
+        The LLM is called TWICE with pure statistics (never knows which is original/synthetic).
+        The comparison is done mathematically, then narrated by the LLM.
+
+        Args:
+            df_original:  The real uploaded dataset
+            df_synthetic: The generated synthetic dataset
+            job_id:       Job ID for logging
+
+        Returns:
+            PatternComparisonReport dict with preservation_score, narrative, per-column drift
+        """
+        if not AI_AVAILABLE:
+            return {"error": "AI bridge not available", "preservation_score": None}
+
+        # Step 1: Analyze ORIGINAL (LLM sees only stats, not the label)
+        original_report = analyze_dataset_pattern(df_original, job_id, dataset_label="ORIGINAL")
+
+        # Step 2: Analyze SYNTHETIC (LLM sees only stats, not the label)
+        synthetic_report = analyze_dataset_pattern(df_synthetic, job_id, dataset_label="SYNTHETIC")
+
+        # Step 3: Compare the two reports
+        comparison = compare_patterns(original_report, synthetic_report, job_id)
+        comparison["original_shape"]  = original_report["fingerprint"]["shape"]
+        comparison["synthetic_shape"] = synthetic_report["fingerprint"]["shape"]
+
+        return comparison
+
+    # ───────────────────────────────────────────────────────────────────────────
     # BIAS AUDIT PIPELINE
-    # ─────────────────────────────────────────────────────────────────────────
+    # ───────────────────────────────────────────────────────────────────────────
 
     def ai_detect_bias_columns(
         self, df: pd.DataFrame, audit_id: str

@@ -240,34 +240,67 @@ def detect_inferred_type(series: pd.Series) -> str:
 
 def classify_column(column_name: str, series: pd.Series) -> Classification:
     name = column_name.lower()
-    pii_keywords = {
-        "name",
-        "email",
-        "phone",
-        "ssn",
-        "social",
-        "address",
-        "passport",
-        "license",
-        "account",
-        "id",
-        "dob",
-        "zip",
-        "mrn",
-    }
-    phi_keywords = {"patient", "medical", "diagnosis", "treatment", "health", "hospital"}
-    sensitive_keywords = {"income", "salary", "loan", "credit", "score", "transaction", "amount"}
-
     inferred_type = detect_inferred_type(series)
 
+    # ── PHI: Protected Health Information (strictest — SUPPRESS) ──────────────
+    phi_keywords = {
+        "patient", "medical", "diagnosis", "treatment", "health", "hospital",
+        "clinical", "mrn", "icd", "medication", "prescription", "symptom",
+        "discharge", "admission", "vitals", "lab_result", "dob", "date_of_birth",
+    }
     if any(k in name for k in phi_keywords):
-        return Classification("PHI", 0.93, "SUPPRESS", "HIPAA Safe Harbor §164.514(b)(2)", inferred_type)
-    if any(k in name for k in pii_keywords):
-        if "age" in name or "zip" in name or "date" in name:
-            return Classification("PII", 0.9, "GENERALIZE", "GDPR Article 9 / HIPAA de-identification", inferred_type)
-        return Classification("PII", 0.96, "SUPPRESS", "GDPR Article 17 / GLBA Safeguards Rule", inferred_type)
-    if any(k in name for k in sensitive_keywords):
-        return Classification("SENSITIVE", 0.86, "RETAIN_WITH_NOISE", "GLBA Safeguards Rule", inferred_type)
+        return Classification("PHI", 0.93, "SUPPRESS",
+                              "HIPAA Safe Harbor §164.514(b)(2)", inferred_type)
+
+    # ── PII: Direct personal identifiers ──────────────────────────────────────
+    # Sub-case: GENERALIZE (keep but obscure range)
+    generalize_pii = {"age", "zip", "postal", "birth_year", "year_of_birth"}
+    if any(k in name for k in generalize_pii):
+        return Classification("PII", 0.90, "GENERALIZE",
+                              "GDPR Article 89 / HIPAA Safe Harbor k-anonymity", inferred_type)
+
+    # Sub-case: SUPPRESS (remove entirely)
+    suppress_pii = {
+        "name", "email", "phone", "mobile", "ssn", "social_security",
+        "address", "street", "passport", "driver_license", "license_plate",
+        "account_number", "credit_card", "iban", "ip_address", "mac_address",
+        "_id", "user_id", "customer_id", "client_id", "applicant_id",
+        "employee_id", "person_id", "national_id",
+    }
+    if any(k in name for k in suppress_pii):
+        return Classification("PII", 0.96, "SUPPRESS",
+                              "GDPR Article 17 / GLBA Safeguards Rule", inferred_type)
+
+    # Also catch generic trailing _id / _key / _no patterns
+    import re as _re
+    if _re.search(r"(_id|_key|_no|_num|_code)$", name):
+        return Classification("PII", 0.85, "SUPPRESS",
+                              "GDPR Article 17 — identifier column", inferred_type)
+
+    # ── SENSITIVE: Protected attributes & private financials ──────────────────
+    # These RETAIN_WITH_NOISE — kept but DP noise applied
+    sensitive_retain = {
+        # Demographic protected attributes (anti-discrimination laws)
+        "gender", "sex", "race", "ethnicity", "nationality", "religion",
+        "political", "disability", "marital_status", "pregnancy",
+        # Age (when not already caught by GENERALIZE above)
+        "age",
+        # Financial sensitive data
+        "salary", "income", "wage", "compensation", "earnings",
+        "credit_score", "loan", "debt", "mortgage", "bankruptcy",
+        "transaction", "account_balance", "net_worth",
+        # HR/hiring outcomes
+        "score", "rating", "performance", "screening", "interview",
+        "shortlisted", "hired", "hiring", "decision", "outcome",
+        # Education
+        "education", "degree", "qualification", "gpa",
+    }
+    if any(k in name for k in sensitive_retain):
+        return Classification("SENSITIVE", 0.86, "RETAIN_WITH_NOISE",
+                              "GDPR Article 9 / EEOC Anti-discrimination / GLBA Safeguards",
+                              inferred_type)
+
+    # ── SAFE: No compliance concern ────────────────────────────────────────────
     return Classification("SAFE", 0.82, "RETAIN", "No special handling required", inferred_type)
 
 
@@ -1743,6 +1776,249 @@ async def download_bias_report(audit_id: str, file_type: str) -> FileResponse:
     return FileResponse(path=str(path), filename=path.name)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PATTERN ANALYSIS ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/api/analyze-pattern/{job_id}")
+async def analyze_pattern(job_id: str) -> Dict[str, Any]:
+    """
+    Run the blind Pattern Analysis Agent on a completed job's original + synthetic data.
+    The LLM never knows which dataset is real — prevents hallucinated narratives.
+    """
+    job_dir    = JOBS_DIR / job_id
+    synth_path = job_dir / "outputs" / "synthetic_data.csv"
+
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT filename FROM jobs WHERE job_id = ?", [job_id]).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    input_file = job_dir / "raw_upload" / row[0]
+    if not input_file.exists():
+        raise HTTPException(status_code=404, detail="Original dataset file not found")
+    if not synth_path.exists():
+        raise HTTPException(status_code=404, detail="Synthetic dataset not found — run the pipeline first")
+
+    df_original  = await asyncio.to_thread(read_dataset, input_file)
+    df_synthetic = await asyncio.to_thread(pd.read_csv, synth_path)
+    df_original.columns  = [str(c).strip() for c in df_original.columns]
+    df_synthetic.columns = [str(c).strip() for c in df_synthetic.columns]
+
+    insert_agent_log(job_id, "Pattern Analyst Agent", "ANALYSIS",
+                     "Running blind pattern analysis on original + synthetic...")
+
+    if bridge.available:
+        try:
+            comparison = await asyncio.to_thread(
+                bridge.ai_analyze_patterns, df_original, df_synthetic, job_id
+            )
+        except Exception as e:
+            insert_agent_log(job_id, "Pattern Analyst Agent", "ANALYSIS",
+                             f"AI pattern analysis failed: {e}", "WARNING")
+            comparison = {"error": str(e), "preservation_score": None}
+    else:
+        comparison = {"error": "AI bridge unavailable", "preservation_score": None}
+
+    # Cache the comparison report
+    report_path = job_dir / "outputs" / "pattern_report.json"
+    dump_json(report_path, comparison)
+    insert_agent_log(job_id, "Pattern Analyst Agent", "ANALYSIS",
+                     f"Pattern analysis complete. Preservation: {comparison.get('preservation_score', 'N/A')}")
+    return comparison
+
+
+@app.get("/api/pattern-report/{job_id}")
+async def get_pattern_report(job_id: str) -> Dict[str, Any]:
+    """Return cached pattern comparison report for a completed job."""
+    report_path = JOBS_DIR / job_id / "outputs" / "pattern_report.json"
+    if not report_path.exists():
+        raise HTTPException(status_code=404,
+                            detail="Pattern report not found — call POST /api/analyze-pattern/{job_id} first")
+    with open(report_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCAL MODEL FINE-TUNING ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+FINETUNE_JOBS: Dict[str, Dict[str, Any]] = {}  # In-memory status tracker
+
+
+@app.get("/api/finetune/models")
+async def list_finetune_models() -> Dict[str, Any]:
+    """List Ollama models available for fine-tuning/customization."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True, text=True, timeout=10
+        )
+        lines = result.stdout.strip().split("\n")
+        models = []
+        for line in lines[1:]:  # Skip header row
+            parts = line.split()
+            if parts:
+                models.append({
+                    "name":    parts[0],
+                    "size":    parts[2] if len(parts) > 2 else "unknown",
+                    "modified": " ".join(parts[3:]) if len(parts) > 3 else "",
+                })
+        return {"models": models, "count": len(models)}
+    except Exception as e:
+        return {"models": [], "count": 0, "error": str(e)}
+
+
+class FinetuneRequest(BaseModel):
+    base_model: str
+    system_prompt: Optional[str] = None
+    max_context_rows: Optional[int] = Field(default=200, ge=10, le=1000)
+
+
+@app.post("/api/finetune/start/{job_id}")
+async def start_finetune(job_id: str, req: FinetuneRequest) -> Dict[str, Any]:
+    """
+    Start fine-tuning a local Ollama model on the synthetic dataset.
+
+    This creates an Ollama Modelfile that embeds:
+    1. A domain-aware system prompt (auto-generated from dataset columns)
+    2. The synthetic dataset rows as context examples
+
+    Then runs `ollama create fairsynth-{job_id} -f {modelfile}` in the background.
+    """
+    synth_path = JOBS_DIR / job_id / "outputs" / "synthetic_data.csv"
+    if not synth_path.exists():
+        raise HTTPException(status_code=404, detail="Synthetic dataset not found")
+
+    if job_id in FINETUNE_JOBS and FINETUNE_JOBS[job_id].get("status") == "RUNNING":
+        raise HTTPException(status_code=409, detail="Fine-tuning already in progress for this job")
+
+    df = pd.read_csv(synth_path)
+    model_name = f"fairsynth-{job_id[:8]}"
+
+    # Build system prompt
+    col_names = ", ".join(df.columns.tolist())
+    n_rows = len(df)
+    auto_system = (
+        f"You are a data expert for a synthetic dataset with {n_rows} rows and columns: {col_names}. "
+        "Answer questions about this data precisely and factually. "
+        "If asked to summarize, compute statistics, or find patterns, use the context below. "
+        "Do not make up numbers — only reference the provided data."
+    )
+    system_prompt = req.system_prompt or auto_system
+
+    # Embed dataset rows as context (limit to max_context_rows)
+    sample_df = df.head(req.max_context_rows)
+    context_rows = sample_df.to_csv(index=False)
+
+    # Build Modelfile
+    modelfile_content = (
+        f'FROM {req.base_model}\n\n'
+        f'SYSTEM """{system_prompt}"""\n\n'
+        f'# Embedded synthetic dataset context ({len(sample_df)} rows)\n'
+        f'# Full dataset: {n_rows} rows, columns: {col_names}\n\n'
+        f'PARAMETER temperature 0.1\n'
+        f'PARAMETER num_ctx 8192\n\n'
+        f'MESSAGE user "Here is the dataset context:"\n'
+        f'MESSAGE assistant "Understood. Here are the {len(sample_df)} synthetic data rows:\\n```csv\\n{context_rows}```\\nI am ready to answer questions about this dataset."\n'
+    )
+
+    # Save modelfile
+    finetune_dir = JOBS_DIR / job_id / "finetune"
+    finetune_dir.mkdir(parents=True, exist_ok=True)
+    modelfile_path = finetune_dir / "Modelfile"
+    modelfile_path.write_text(modelfile_content, encoding="utf-8")
+
+    FINETUNE_JOBS[job_id] = {
+        "status":     "STARTING",
+        "model_name": model_name,
+        "base_model": req.base_model,
+        "started_at": now_iso(),
+        "log":        [],
+    }
+
+    asyncio.create_task(_run_ollama_create(job_id, model_name, modelfile_path))
+    return {
+        "status":     "STARTING",
+        "model_name": model_name,
+        "job_id":     job_id,
+        "message":    f"Building custom model '{model_name}' from '{req.base_model}'...",
+    }
+
+
+async def _run_ollama_create(job_id: str, model_name: str, modelfile_path: Path) -> None:
+    """Run ollama create in a subprocess — non-blocking."""
+    import subprocess
+    FINETUNE_JOBS[job_id]["status"] = "RUNNING"
+    try:
+        result = await asyncio.to_thread(
+            lambda: subprocess.run(
+                ["ollama", "create", model_name, "-f", str(modelfile_path)],
+                capture_output=True, text=True, timeout=300
+            )
+        )
+        if result.returncode == 0:
+            FINETUNE_JOBS[job_id]["status"]       = "COMPLETE"
+            FINETUNE_JOBS[job_id]["completed_at"] = now_iso()
+            FINETUNE_JOBS[job_id]["log"].append("✅ Model created successfully")
+        else:
+            FINETUNE_JOBS[job_id]["status"] = "FAILED"
+            FINETUNE_JOBS[job_id]["error"]  = result.stderr
+            FINETUNE_JOBS[job_id]["log"].append(f"❌ Error: {result.stderr[:500]}")
+    except Exception as e:
+        FINETUNE_JOBS[job_id]["status"] = "FAILED"
+        FINETUNE_JOBS[job_id]["error"]  = str(e)
+
+
+@app.get("/api/finetune/status/{job_id}")
+async def get_finetune_status(job_id: str) -> Dict[str, Any]:
+    """Poll fine-tuning job status."""
+    if job_id not in FINETUNE_JOBS:
+        raise HTTPException(status_code=404, detail="No fine-tuning job found for this job_id")
+    return FINETUNE_JOBS[job_id]
+
+
+class ChatMessage(BaseModel):
+    message: str
+    stream: bool = False
+
+
+@app.post("/api/finetune/chat/{job_id}")
+async def chat_with_model(job_id: str, req: ChatMessage) -> Dict[str, Any]:
+    """
+    Chat with the fine-tuned model for this job.
+    The model has the synthetic dataset embedded as context.
+    """
+    if job_id not in FINETUNE_JOBS:
+        raise HTTPException(status_code=404, detail="No fine-tuning job found")
+    if FINETUNE_JOBS[job_id].get("status") != "COMPLETE":
+        raise HTTPException(status_code=409,
+                            detail=f"Model not ready. Status: {FINETUNE_JOBS[job_id].get('status')}")
+
+    model_name = FINETUNE_JOBS[job_id]["model_name"]
+    try:
+        import ollama
+        client = ollama.Client(host="http://localhost:11434")
+        response = client.chat(
+            model=model_name,
+            messages=[{"role": "user", "content": req.message}],
+            options={"temperature": 0.1, "num_ctx": 8192},
+        )
+        return {
+            "response":    response["message"]["content"],
+            "model":       model_name,
+            "job_id":      job_id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat error: {e}")
+
+
 @app.get("/")
 async def root() -> Dict[str, str]:
     return {"service": "FairSynth Backend", "status": "ok", "docs": "/docs"}
+

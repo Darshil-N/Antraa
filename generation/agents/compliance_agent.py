@@ -69,22 +69,46 @@ _FALLBACK_RULES: dict[SensitivityClass, CompliancePlanEntry] = {
 # Prompts
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SYSTEM_PROMPT = """You are a compliance expert specializing in HIPAA, GDPR, and GLBA data regulations.
-Given a dataset column and relevant compliance rules retrieved from a knowledge base,
-determine the correct compliance action for that column.
+_SYSTEM_PROMPT = """You are a compliance expert specializing in HIPAA, GDPR, GLBA, and EEOC data regulations.
+Given a dataset column and retrieved compliance rules, determine the SINGLE correct compliance action.
 
-Available actions:
-- SUPPRESS: Remove column entirely. MUST use this for direct personal identifiers (PII) like Employee IDs, SSNs, Patient IDs.
-- MASK: Pseudonymize by replacing with realistic fake values (names, emails).
-- GENERALIZE: Convert to ranges or buckets (e.g. k-anonymity for age 34 → decade range).
-- RETAIN_WITH_NOISE: Keep column but apply differential privacy noise. Best for aggregate statistics or continuous outcomes.
-- RETAIN: No action needed (safe public columns like Job Rank).
+DECISION RULES — apply in this exact priority order:
 
-Epsilon Budget logic (Differential Privacy):
-- Epsilon defines the privacy budget. Lower is more private.
-- ε=10.0: Light privacy (e.g., preserving outcomes like hiring_decision)
-- ε=1.0: Standard privacy
-- ε=0.1: Strict privacy (highly sensitive outcomes)
+1. SUPPRESS — use when column is a direct personal identifier that CANNOT be retained:
+   - SSN, national ID, passport number, driver license
+   - Personal email, personal phone number
+   - Full name or first+last name combinations
+   - Medical record number (MRN), patient ID
+   - Account numbers, credit card numbers, IBAN
+   - Any auto-increment or UUID that is a primary key tied to an individual
+   → Rule: if the value uniquely identifies a real person and cannot be anonymized, SUPPRESS.
+
+2. PSEUDONYMIZE — use when the column contains names/identifiers that need plausible replacement:
+   - Employee names (replace with fake names via Faker)
+   - Business emails (replace with fake emails)
+   - Usernames, display names
+   → Rule: if a human name or email appears in values/samples, PSEUDONYMIZE.
+
+3. GENERALIZE — use when the column has quasi-identifier potential but needs range-bucketing:
+   - Age (exact age → decade bucket: 30-39)
+   - ZIP/postal codes (exact → first 3 digits)
+   - Year of birth → birth decade
+   - Exact salary → income range bucket (<25K, 25-50K, etc.)
+   → Rule: if the column is a numerical quasi-identifier that loses sensitivity when bucketed, GENERALIZE.
+
+4. RETAIN_WITH_NOISE — use when the column must be included but contains sensitive patterns:
+   - Gender, sex, race, ethnicity, religion, disability (protected attributes under anti-discrimination law)
+   - Hiring/shortlisting decisions, outcomes, scores, ratings
+   - Salary, income, compensation (when not generalizing)
+   - Credit scores, loan amounts
+   → Rule: if the column is a protected attribute or sensitive financial/outcome metric, RETAIN_WITH_NOISE.
+
+5. RETAIN — use ONLY for genuinely public, non-sensitive structural data:
+   - Job rank or title (public information, not personal)
+   - Department name or number (organizational structure)
+   - Product category, store location
+   - Binary technical flags with no personal meaning
+   → Rule: only RETAIN if the value cannot be linked to an individual's protected characteristics or identity.
 
 Respond ONLY with valid JSON. No markdown, no explanation."""
 

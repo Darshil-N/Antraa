@@ -69,6 +69,8 @@
     <div class="tabs">
         <div class="tab active" onclick="switchTab('core')">Core Pipeline (Synthesis)</div>
         <div class="tab" onclick="switchTab('bias')">Bias Audit Pipeline</div>
+        <div class="tab" onclick="switchTab('pattern')">Pattern Analysis</div>
+        <div class="tab" onclick="switchTab('finetune')">Fine-Tune Model</div>
     </div>
 
     <!-- CORE PIPELINE PANEL -->
@@ -167,6 +169,70 @@
             <h3>3. Findings</h3>
             <div id="bias-findings"></div>
             <div id="bias-downloads" class="flex" style="margin-top:15px;"></div>
+        </div>
+    </div>
+
+    <!-- PATTERN ANALYSIS PANEL -->
+    <div id="pattern" class="panel">
+        <div class="card">
+            <h3>Pattern Preservation Analysis</h3>
+            <p>After running a synthesis job, this agent independently analyzes the statistical patterns of both your original and synthetic datasets. The AI narrates each dataset without knowing which is which — preventing bias in the report.</p>
+            <div class="flex">
+                <label>Job ID: <input type="text" id="pattern-job-id" placeholder="Paste your synthesis Job ID" style="width:350px;"></label>
+                <button onclick="runPatternAnalysis()" style="margin-top:0;">Run Pattern Analysis</button>
+            </div>
+            <div class="logs" id="pattern-logs" style="height:80px;"></div>
+        </div>
+        <div id="pattern-results" class="card hidden">
+            <h3>Pattern Comparison Report</h3>
+            <div id="pattern-score-section" style="margin-bottom:16px;"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div>
+                    <h4 style="color:var(--secondary)">Original Dataset Pattern</h4>
+                    <div id="pattern-orig-narrative"></div>
+                </div>
+                <div>
+                    <h4 style="color:var(--secondary)">Synthetic Dataset Pattern</h4>
+                    <div id="pattern-synth-narrative"></div>
+                </div>
+            </div>
+            <div id="pattern-comparison" style="margin-top:16px;"></div>
+            <div id="pattern-drift" style="margin-top:16px;"></div>
+        </div>
+    </div>
+
+    <!-- FINE-TUNE PANEL -->
+    <div id="finetune" class="panel">
+        <div class="card">
+            <h3>Fine-Tune a Local Ollama Model on Your Synthetic Data</h3>
+            <p>After synthesis, you can create a custom Ollama model that understands your synthetic dataset. Once trained, you can ask it dataset-specific questions.</p>
+            <div class="flex">
+                <label>Job ID: <input type="text" id="ft-job-id" placeholder="Paste your synthesis Job ID" style="width:280px;"></label>
+                <button onclick="loadFtModels()">Load Available Models</button>
+            </div>
+        </div>
+        <div id="ft-model-section" class="card hidden">
+            <h3>Select Base Model</h3>
+            <select id="ft-model-select" style="width:100%; margin-bottom:10px;"></select>
+            <div style="margin-bottom:10px;">
+                <label>Max rows to embed as context: <input type="number" id="ft-max-rows" value="200" style="width:100px;"></label>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label>Custom system prompt (optional):<br>
+                    <textarea id="ft-system-prompt" style="width:100%; height:80px; background:#333; color:#fff; border:1px solid var(--border); border-radius:4px; padding:8px;"></textarea>
+                </label>
+            </div>
+            <button onclick="startFinetune()" style="background:var(--secondary); color:#000;">Start Fine-Tuning</button>
+            <div class="logs" id="ft-logs" style="height:100px; margin-top:10px;"></div>
+        </div>
+        <div id="ft-chat-section" class="card hidden">
+            <h3>Chat with Your Fine-Tuned Model</h3>
+            <div id="ft-model-badge" style="margin-bottom:10px; color:var(--secondary); font-weight:bold;"></div>
+            <div id="ft-chat-log" style="background:#000; color:#0f0; font-family:monospace; padding:10px; height:250px; overflow-y:auto; border-radius:4px; margin-bottom:10px;"></div>
+            <div class="flex">
+                <input type="text" id="ft-chat-input" placeholder="Ask a question about your synthetic dataset..." style="flex:1;">
+                <button onclick="sendFtChat()" style="margin-top:0;">Send</button>
+            </div>
         </div>
     </div>
 </div>
@@ -503,6 +569,189 @@
         } catch(e) { console.error(e); }
     }
 
+    // ── PATTERN ANALYSIS ──────────────────────────────────────────────────────
+
+    async function runPatternAnalysis() {
+        const jobId = document.getElementById('pattern-job-id').value.trim();
+        if (!jobId) return alert('Paste a Job ID first');
+        logTo('pattern-logs', `Running blind pattern analysis for job ${jobId}...`);
+        try {
+            const res = await fetch(`${API_BASE}/analyze-pattern/${jobId}`, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Analysis failed');
+            logTo('pattern-logs', `Analysis complete. Preservation: ${data.preservation_score !== null ? (data.preservation_score * 100).toFixed(1) + '%' : 'N/A'}`);
+            renderPatternReport(data);
+        } catch(e) {
+            logTo('pattern-logs', `Error: ${e.message}`);
+        }
+    }
+
+    function renderPatternReport(data) {
+        document.getElementById('pattern-results').classList.remove('hidden');
+        const score = data.preservation_score;
+        const verdict = data.verdict || 'N/A';
+        const scoreColor = score >= 0.85 ? '#4caf50' : score >= 0.65 ? '#ff9800' : '#ff5252';
+
+        document.getElementById('pattern-score-section').innerHTML = `
+            <div style="display:flex; align-items:center; gap:20px; background:#252525; padding:15px; border-radius:8px; border-left: 5px solid ${scoreColor}">
+                <div>
+                    <div style="font-size:3em; font-weight:bold; color:${scoreColor}">${score !== null ? (score*100).toFixed(1)+'%' : 'N/A'}</div>
+                    <div style="font-size:1.1em; color:#aaa">Pattern Preservation Score</div>
+                </div>
+                <div>
+                    <div style="font-size:1.4em; color:${scoreColor}; font-weight:bold;">${verdict} PRESERVATION</div>
+                    <div style="color:#aaa; font-size:0.9em;">
+                        ${data.original_shape ? `Original: ${data.original_shape.rows} rows × ${data.original_shape.columns} cols` : ''}
+                        &nbsp;→&nbsp;
+                        ${data.synthetic_shape ? `Synthetic: ${data.synthetic_shape.rows} rows × ${data.synthetic_shape.columns} cols` : ''}
+                    </div>
+                </div>
+            </div>`;
+
+        // Render narratives side by side
+        function renderNarrative(narr) {
+            if (!narr) return '<em>Not available</em>';
+            return `
+                <div style="font-size:0.9em; line-height:1.6;">
+                    <p><b>Overview:</b> ${narr.overall_summary || ''}</p>
+                    ${Object.keys(narr.numeric_patterns || {}).length ? `
+                        <p><b>Numeric Patterns:</b></p>
+                        ${Object.entries(narr.numeric_patterns).map(([col, desc]) =>
+                            `<div style="margin-left:8px; margin-bottom:4px;"><b>${col}:</b> ${desc}</div>`
+                        ).join('')}` : ''}
+                    ${Object.keys(narr.categorical_patterns || {}).length ? `
+                        <p><b>Categorical Patterns:</b></p>
+                        ${Object.entries(narr.categorical_patterns).map(([col, desc]) =>
+                            `<div style="margin-left:8px; margin-bottom:4px;"><b>${col}:</b> ${desc}</div>`
+                        ).join('')}` : ''}
+                    <p><b>Correlations:</b> ${narr.correlation_highlights || 'N/A'}</p>
+                    <p><b>Data Quality:</b> ${narr.data_quality_notes || 'N/A'}</p>
+                </div>`;
+        }
+        document.getElementById('pattern-orig-narrative').innerHTML  = renderNarrative(data.original_narrative);
+        document.getElementById('pattern-synth-narrative').innerHTML = renderNarrative(data.synthetic_narrative);
+
+        // Comparison narrative
+        const comp = data.comparison_narrative || {};
+        document.getElementById('pattern-comparison').innerHTML = comp.headline ? `
+            <div style="background:#1a2f1a; border:1px solid #4caf50; border-radius:6px; padding:12px;">
+                <h4 style="color:#4caf50; margin-top:0;">${comp.headline}</h4>
+                ${comp.preserved_patterns?.length ? `<p><b>✅ Preserved:</b> ${comp.preserved_patterns.join(' | ')}</p>` : ''}
+                ${comp.drifted_patterns?.length ? `<p><b>⚠️ Drifted:</b> ${comp.drifted_patterns.join(' | ')}</p>` : ''}
+                ${comp.auditor_conclusion ? `<p><b>Auditor Conclusion:</b> <em>${comp.auditor_conclusion}</em></p>` : ''}
+            </div>` : '';
+
+        // Per-column drift table
+        const drift = data.numeric_drift || {};
+        if (Object.keys(drift).length > 0) {
+            let driftHtml = `<h4>Per-Column Numeric Drift</h4>
+                <table><thead><tr><th>Column</th><th>Mean Drift %</th><th>Median Drift %</th><th>Std Drift %</th><th>Preservation</th></tr></thead><tbody>`;
+            Object.entries(drift).forEach(([col, d]) => {
+                const pc = (d.preservation_score * 100).toFixed(1);
+                const color = d.preservation_score >= 0.85 ? '#4caf50' : d.preservation_score >= 0.65 ? '#ff9800' : '#ff5252';
+                driftHtml += `<tr>
+                    <td><b>${col}</b></td>
+                    <td>${d.mean_drift_pct?.toFixed(2) || 'N/A'}%</td>
+                    <td>${d.median_drift_pct?.toFixed(2) || 'N/A'}%</td>
+                    <td>${d.std_drift_pct?.toFixed(2) || 'N/A'}%</td>
+                    <td style="color:${color}; font-weight:bold;">${pc}%</td>
+                </tr>`;
+            });
+            driftHtml += '</tbody></table>';
+            document.getElementById('pattern-drift').innerHTML = driftHtml;
+        }
+    }
+
+    // ── FINE-TUNING ───────────────────────────────────────────────────────────
+
+    let _ftJobId = null;
+    let _ftPollInterval = null;
+
+    async function loadFtModels() {
+        const jobId = document.getElementById('ft-job-id').value.trim();
+        if (!jobId) return alert('Paste a Job ID first');
+        _ftJobId = jobId;
+        logTo('ft-logs', 'Loading available Ollama models...');
+        try {
+            const res = await fetch(`${API_BASE}/finetune/models`);
+            const data = await res.json();
+            const sel = document.getElementById('ft-model-select');
+            sel.innerHTML = '';
+            if (!data.models?.length) {
+                sel.innerHTML = '<option>No models found — is Ollama running?</option>';
+            } else {
+                data.models.forEach(m => {
+                    sel.innerHTML += `<option value="${m.name}">${m.name} (${m.size})</option>`;
+                });
+            }
+            document.getElementById('ft-model-section').classList.remove('hidden');
+            logTo('ft-logs', `Found ${data.count} models.`);
+        } catch(e) { logTo('ft-logs', `Error: ${e.message}`); }
+    }
+
+    async function startFinetune() {
+        if (!_ftJobId) return;
+        const baseModel = document.getElementById('ft-model-select').value;
+        const maxRows   = parseInt(document.getElementById('ft-max-rows').value) || 200;
+        const sysPmt    = document.getElementById('ft-system-prompt').value.trim() || null;
+
+        logTo('ft-logs', `Starting fine-tuning: base=${baseModel}, maxRows=${maxRows}...`);
+        try {
+            const res = await fetch(`${API_BASE}/finetune/start/${_ftJobId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ base_model: baseModel, max_context_rows: maxRows, system_prompt: sysPmt }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Start failed');
+            logTo('ft-logs', `${data.message} Polling for completion...`);
+            // Poll every 3 seconds
+            _ftPollInterval = setInterval(() => pollFtStatus(data.model_name), 3000);
+        } catch(e) { logTo('ft-logs', `Error: ${e.message}`); }
+    }
+
+    async function pollFtStatus(modelName) {
+        try {
+            const res = await fetch(`${API_BASE}/finetune/status/${_ftJobId}`);
+            const data = await res.json();
+            logTo('ft-logs', `Status: ${data.status}`);
+            if (data.status === 'COMPLETE') {
+                clearInterval(_ftPollInterval);
+                logTo('ft-logs', `✅ Model '${modelName}' is ready! Opening chat...`);
+                document.getElementById('ft-model-badge').innerText = `Active model: ${modelName}`;
+                document.getElementById('ft-chat-section').classList.remove('hidden');
+            } else if (data.status === 'FAILED') {
+                clearInterval(_ftPollInterval);
+                logTo('ft-logs', `❌ Training failed: ${data.error || 'Unknown error'}`);
+            }
+        } catch(e) {}
+    }
+
+    async function sendFtChat() {
+        if (!_ftJobId) return;
+        const input = document.getElementById('ft-chat-input');
+        const msg   = input.value.trim();
+        if (!msg) return;
+        const chatLog = document.getElementById('ft-chat-log');
+        chatLog.innerHTML += `<div style="color:#bb86fc;">[You] ${msg}</div>`;
+        input.value = '';
+        chatLog.scrollTop = chatLog.scrollHeight;
+        try {
+            const res = await fetch(`${API_BASE}/finetune/chat/${_ftJobId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message: msg }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Chat error');
+            chatLog.innerHTML += `<div style="color:#0f0; margin-bottom:8px;">[Model] ${data.response}</div>`;
+            chatLog.scrollTop = chatLog.scrollHeight;
+        } catch(e) {
+            chatLog.innerHTML += `<div style="color:#ff5252;">[Error] ${e.message}</div>`;
+        }
+    }
+
 </script>
 </body>
 </html>
+

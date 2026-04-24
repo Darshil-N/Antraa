@@ -265,7 +265,7 @@ Bias Audit Report (PDF + JSON) with severity ratings and plain-English findings
 │         └────────────────┼───────────────────────┘                │
 │                          │ HTTP / WebSocket                        │
 │  ┌───────────────────────────────────────────────────────────┐    │
-│  │              [Optional] Bias Audit Page                   │    │
+│  │     [Optional] Bias Audit | Pattern Analysis | Chat       │    │
 │  │   Trigger independently on any dataset (real/synthetic)   │    │
 │  └───────────────────────┬───────────────────────────────────┘    │
 └──────────────────────────┼────────────────────────────────────────┘
@@ -274,9 +274,10 @@ Bias Audit Report (PDF + JSON) with severity ratings and plain-English findings
 │                   FASTAPI BACKEND                                  │
 │                          │                                         │
 │  ┌────────────────────────▼──────────────────────────────────┐    │
-│  │                    API Router Layer                        │    │
+│  │                    API Router Layer                       │    │
 │  │  /upload  /start-pipeline  /approve  /ws/{job_id}         │    │
 │  │  /download  /start-bias-audit  /ws/bias/{audit_id}        │    │
+│  │  /analyze-pattern  /finetune/start  /finetune/chat        │    │
 │  └──────────────┬───────────────────────────┬────────────────┘    │
 │                 │                           │                      │
 │  ┌──────────────▼──────────┐   ┌────────────▼──────────────┐      │
@@ -444,6 +445,14 @@ The Bias Audit module does not modify data. It does not correct, reweight, or al
 - Responsibility: Generate plain-English interpretation for each finding. Contextualize each severity level. Explain the applicable legal standard. Write the narrative section of the Bias Audit Report.
 - Output: Bias Audit Report narrative + structured findings JSON
 
+### Pattern Analysis Agent (Independent Graph)
+
+**Pattern Analyst**
+- Trigger: Receives pure statistical profiles of both original and synthetic datasets
+- Model: Llama-3.1-8B
+- Responsibility: Independently analyze statistical patterns of datasets. Crucially, the LLM is "blind" to dataset identity (it never knows if it's evaluating the original or synthetic data). This prevents hallucination. It computes per-column drift mathematically.
+- Output: Pattern Comparison Report (JSON) including preservation score, per-column numeric drift, and side-by-side pattern narratives.
+
 ### Agent Communication Protocol
 
 All agents communicate exclusively through the LangGraph shared state object. No agent writes directly to the database or emits WebSocket events. All side effects are handled by the orchestrator after each agent node completes. This separation ensures that if any agent fails, the orchestrator can retry just that node without re-running the full pipeline.
@@ -598,6 +607,28 @@ Returns complete bias audit findings and download URLs.
 **GET /api/bias-audit/download/{audit_id}/{file_type}**
 file_type: `report_pdf`, `findings_json`.
 
+### Pattern Analysis Endpoint Catalog
+
+**POST /api/analyze-pattern/{job_id}**
+Runs the blind Pattern Analysis Agent on a completed job's original and synthetic data. The LLM receives pure statistics to prevent hallucinated narratives. Caches the result.
+
+**GET /api/pattern-report/{job_id}**
+Returns the cached pattern comparison report (narrative, drift statistics, and preservation score).
+
+### Local Model Fine-Tuning Endpoint Catalog
+
+**GET /api/finetune/models**
+Lists Ollama models available on the host for fine-tuning.
+
+**POST /api/finetune/start/{job_id}**
+Accepts a `base_model` and `max_context_rows`. Auto-generates a system prompt, creates a Modelfile embedding the synthetic dataset as context, and runs `ollama create` in the background.
+
+**GET /api/finetune/status/{job_id}**
+Polls the status of the fine-tuning job (STARTING, RUNNING, COMPLETE, FAILED).
+
+**POST /api/finetune/chat/{job_id}**
+Accepts a message. Chats with the completed custom model specific to this job's synthetic dataset.
+
 ### Background Task & Pipeline Lifecycle
 
 When `/start-pipeline` or `/bias-audit/start` is called, FastAPI schedules the respective LangGraph orchestrator as a background task. The orchestrator runs completely asynchronously. After each node completes, it writes state to DuckDB and emits an event to a message queue. A WebSocket sender coroutine reads from the queue and pushes events to the connected client. If the user temporarily disconnects and reconnects, they receive a replay of all events since the last known state.
@@ -712,6 +743,26 @@ Sticky footer bar: "Approve & Generate" button. Shows count of unapproved column
 **BiasFindings:** List of expandable cards, one per finding, sorted by severity (CRITICAL first). Each card: severity badge, protected attribute name, outcome column name, key metric value, and the plain-English interpretation from the Bias Interpreter Agent. Expandable section shows full metric table.
 
 **BiasAuditDownloadPanel:** Two download cards — PDF report and JSON findings export.
+
+### Pattern Analysis Page Components
+
+**PatternPreservationScoreCard:** A large badge displaying the overall pattern preservation score, color-coded (Green for >85%, Amber for >65%, Red for <65%).
+
+**SideBySideNarratives:** Two separate narrative blocks side-by-side. One for the Original Dataset Pattern and one for the Synthetic Dataset Pattern.
+
+**PatternComparisonSection:** A highlighted block containing the comparison narrative (preserved patterns, drifted patterns, and auditor conclusion).
+
+**PerColumnDriftTable:** A table displaying each numerical column, its mean/median/std drift percentages, and its individual preservation score.
+
+### Local Model Fine-Tuning Page Components
+
+**ModelSelector:** A dropdown populated with available Ollama models.
+
+**ContextConfiguration:** Inputs to set the `max_context_rows` to embed and an optional custom system prompt.
+
+**StatusPoller:** A text block showing the real-time status of the fine-tuning job (STARTING, RUNNING, COMPLETE, FAILED).
+
+**ChatInterface:** A terminal-style chat interface containing a scrolling log of messages and an input field to chat with the newly fine-tuned model.
 
 ---
 
@@ -841,9 +892,11 @@ The RTX 3050's 6GB VRAM cannot support all models simultaneously. The pipeline i
 
 **Core Pipeline Phase 4 (Synthetic Generation):** ALL LLMs unloaded from VRAM completely before SDV training begins. Explicit garbage collection and CUDA cache clear triggered. SDV GaussianCopulaSynthesizer uses CPU and system RAM only. VRAM drops to ~0.5GB (driver overhead only).
 
-**Core Pipeline Phase 5 (Validation):** Phi-3-mini (3.8B, 4-bit GGUF) loaded as lighter model. VRAM: ~2.5GB, leaving 3.5GB for computation buffers.
+**Core Pipeline Phase 5 (Validation) & Pattern Analysis:** Phi-3-mini (3.8B, 4-bit GGUF) and Llama-3.1-8B are used dynamically depending on the task. The Pattern Analysis agent uses Llama-3.1-8B to generate blind narratives. VRAM context swapping ensures generation only occurs when enough VRAM is freed up.
 
 **Bias Audit (any phase):** Phi-3-mini used throughout for all Bias Audit agents. Consistent ~2.5GB VRAM consumption. If bias audit runs concurrently with core pipeline, VRAM scheduler ensures Bias Audit only loads Phi when core pipeline is in a CPU-only phase (generation). They never share VRAM simultaneously.
+
+**Local Model Fine-Tuning:** Uses Ollama's `create` pipeline to embed synthetic data rows directly into the Modelfile context, avoiding full-weight fine-tuning (LoRA/QLoRA) which would exceed the 6GB limit. This allows instant "training" without VRAM spikes.
 
 ### RAM Allocation (24GB Total)
 
