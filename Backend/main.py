@@ -28,6 +28,7 @@ UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 JOBS_DIR = BASE_DIR / "tmp_jobs"
 BIAS_DIR = BASE_DIR / "tmp_bias"
+CACHE_DIR = BASE_DIR / "cache"
 DB_PATH = BASE_DIR / "data.db"
 
 ALLOWED_EXTENSIONS = {".csv", ".json", ".parquet"}
@@ -81,6 +82,7 @@ def init_dirs() -> None:
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     BIAS_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def init_db() -> None:
@@ -167,6 +169,26 @@ def init_db() -> None:
                 destruction_trigger TEXT,
                 destruction_timestamp TIMESTAMP,
                 files_destroyed TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cached_jobs (
+                cache_id TEXT PRIMARY KEY,
+                job_id TEXT,
+                job_type TEXT,
+                label TEXT,
+                source_file TEXT,
+                cached_at TIMESTAMP,
+                overall_quality_score DOUBLE,
+                privacy_risk_score DOUBLE,
+                correlation_similarity DOUBLE,
+                rows INTEGER,
+                columns INTEGER,
+                has_synthetic_csv BOOLEAN,
+                has_audit_pdf BOOLEAN,
+                has_certificate BOOLEAN
             )
             """
         )
@@ -496,182 +518,282 @@ def compute_quality(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> Dict[str, 
 
 import hashlib
 
+def _draw_colored_bar(c, x, y, width, height, fraction, color_rgb):
+    """Draw a single horizontal progress bar on a ReportLab canvas."""
+    c.setFillColorRGB(0.92, 0.92, 0.92)
+    c.rect(x, y, width, height, fill=1, stroke=0)
+    c.setFillColorRGB(*color_rgb)
+    c.rect(x, y, max(2, width * fraction), height, fill=1, stroke=0)
+
+
+def generate_audit_report(
+    job_id: str,
+    summary: Dict[str, Any],
+    output_dir: Path,
+    quality: Optional[Dict[str, Any]] = None,
+    decisions: Optional[list] = None,
+) -> Path:
+    """Generate a colourful Audit Trail PDF with charts."""
+    pdf_path = output_dir / "audit_trail.pdf"
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib import colors
+
+        W, H = letter
+        c = rl_canvas.Canvas(str(pdf_path), pagesize=letter)
+
+        # ── Header banner ──
+        c.setFillColorRGB(0.55, 0.06, 0.06)
+        c.rect(0, H - 70, W, 70, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(40, H - 42, "Antraa  ·  Audit Trail & Privacy Report")
+        c.setFont("Helvetica", 10)
+        c.drawString(40, H - 58, f"Job ID: {job_id}   |   Generated: {now_iso()}")
+
+        y = H - 100
+
+        # ── Section: quality bar chart ──
+        ks_scores = quality.get("ks_test_scores", {}) if quality else {}
+        if ks_scores:
+            c.setFillColorRGB(0.12, 0.12, 0.12)
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Per-Column Data Utility (KS Score)  — higher is better")
+            y -= 18
+
+            bar_area_w = W - 220
+            bar_h = 14
+            gap = 6
+
+            for col, score in list(ks_scores.items())[:18]:
+                if y < 60:
+                    c.showPage()
+                    y = H - 60
+                fraction = min(max(float(score), 0.0), 1.0)
+                good = fraction >= 0.70
+                color = (0.18, 0.72, 0.48) if good else (0.90, 0.35, 0.20)
+
+                # label
+                c.setFillColorRGB(0.15, 0.15, 0.15)
+                c.setFont("Helvetica", 8)
+                label = str(col)[:22]
+                c.drawString(40, y + 2, label)
+
+                # bar
+                _draw_colored_bar(c, 180, y, bar_area_w, bar_h, fraction, color)
+
+                # value
+                c.setFillColorRGB(0.15, 0.15, 0.15)
+                c.drawString(180 + bar_area_w + 6, y + 2, f"{fraction:.3f}")
+                y -= bar_h + gap
+
+            y -= 20
+
+        # ── Section: epsilon allocations ──
+        eps_decisions = [
+            d for d in (decisions or [])
+            if (d.get("override_action") or d.get("compliance_action") or "") == "RETAIN_WITH_NOISE"
+        ]
+        if eps_decisions:
+            if y < 120:
+                c.showPage()
+                y = H - 60
+            c.setFillColorRGB(0.10, 0.38, 0.60)
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Differential Privacy — Epsilon (ε) Allocations")
+            y -= 18
+
+            max_eps = max(float(d.get("epsilon_budget", 1)) for d in eps_decisions) or 1
+            bar_area_w = W - 220
+            bar_h = 14
+            gap = 6
+
+            for d in eps_decisions:
+                if y < 60:
+                    c.showPage()
+                    y = H - 60
+                eps = float(d.get("epsilon_budget", 1))
+                fraction = min(eps / max_eps, 1.0)
+                _draw_colored_bar(c, 180, y, bar_area_w, bar_h, fraction, (0.10, 0.55, 0.80))
+                c.setFillColorRGB(0.15, 0.15, 0.15)
+                c.setFont("Helvetica", 8)
+                c.drawString(40, y + 2, str(d.get("column_name", "?"))[:22])
+                c.drawString(180 + bar_area_w + 6, y + 2, f"ε = {eps}")
+                y -= bar_h + gap
+
+        c.save()
+        return pdf_path
+    except Exception as exc:
+        print(f"[Audit PDF Error] {exc}")
+        fallback = output_dir / "audit_trail.json"
+        fallback.write_text(json.dumps({"job_id": job_id, "quality": quality}, default=json_default), encoding="utf-8")
+        return fallback
+
+
 def generate_certificate(job_id: str, summary: Dict[str, Any], output_dir: Path, synth_path: Optional[Path] = None, approval_payload: Optional[ApprovalPayload] = None, quality: Optional[Dict[str, Any]] = None, ai_narrative: Optional[Dict[str, Any]] = None) -> Path:
     pdf_path = output_dir / "compliance_certificate.pdf"
-    
-    # Calculate SHA-256 of synthetic file
+
+    # SHA-256 of synthetic file
     file_hash = "N/A"
     if synth_path and synth_path.exists():
         hasher = hashlib.sha256()
-        with open(synth_path, 'rb') as f:
+        with open(synth_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
         file_hash = hasher.hexdigest()
 
     try:
         from reportlab.lib.pagesizes import letter
-        from reportlab.pdfgen import canvas
+        from reportlab.pdfgen import canvas as rl_canvas
 
-        c = canvas.Canvas(str(pdf_path), pagesize=letter)
-        y = 750
-        
-        # Header
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, y, "Antraa Compliance Certificate")
-        y -= 30
-        
-        c.setFont("Helvetica", 10)
-        c.drawString(50, y, f"Job ID: {job_id}")
-        y -= 15
-        c.drawString(50, y, f"Generated At: {now_iso()}")
-        y -= 15
-        c.drawString(50, y, f"Source File: {summary.get('source_file')}")
-        y -= 15
-        
-        # Calculate synthetic rows
+        W, H = letter
+        c = rl_canvas.Canvas(str(pdf_path), pagesize=letter)
+
+        # ── Teal header banner ──
+        c.setFillColorRGB(0.0, 0.506, 0.655)   # #0081A7
+        c.rect(0, H - 90, W, 90, fill=1, stroke=0)
+        c.setFillColorRGB(0.0, 0.686, 0.725)   # accent stripe
+        c.rect(0, H - 94, W, 4, fill=1, stroke=0)
+
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 24)
+        c.drawString(40, H - 48, "Antraa  Compliance Certificate")
+        c.setFont("Helvetica-Oblique", 11)
+        c.drawString(40, H - 66, "Privacy-First Synthetic Data Generation Platform")
+        c.setFont("Helvetica", 9)
+        c.drawString(40, H - 82, f"Issued: {now_iso()}   |   Job ID: {job_id}")
+
+        y = H - 115
+
+        # ── Light info bar ──
+        c.setFillColorRGB(0.94, 0.98, 1.0)
+        c.rect(30, y - 45, W - 60, 40, fill=1, stroke=0)
+        c.setStrokeColorRGB(0.75, 0.90, 0.95)
+        c.rect(30, y - 45, W - 60, 40, fill=0, stroke=1)
+        c.setFillColorRGB(0.05, 0.35, 0.48)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(42, y - 14, f"Source File:  {summary.get('source_file', 'N/A')}")
+        c.drawString(42, y - 28, f"SHA-256 Checksum:  {file_hash[:48]}...")
         synth_rows = "N/A"
         if synth_path and synth_path.exists():
-            import pandas as pd
-            synth_rows = str(len(pd.read_csv(synth_path)))
-            
-        c.drawString(50, y, f"Rows Generated: {synth_rows} synthetic rows (Source: {summary.get('rows')} rows)")
-        y -= 15
-        c.setFont("Helvetica-Oblique", 8)
-        c.drawString(50, y, "* Note: Synthetic row count is determined by user configuration during the approval phase.")
-        y -= 15
-        c.setFont("Helvetica", 10)
-        c.drawString(50, y, f"Synthetic File SHA-256: {file_hash}")
-        y -= 25
+            try:
+                import pandas as _pd
+                synth_rows = str(len(_pd.read_csv(synth_path)))
+            except Exception:
+                pass
+        c.drawString(350, y - 14, f"Rows Generated:  {synth_rows}")
+        c.drawString(350, y - 28, f"Source Rows:  {summary.get('rows', 'N/A')}")
+        y -= 62
 
-        # AI Narrative Statement
-        if ai_narrative and "certificate_statement" in ai_narrative:
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(50, y, "Official Compliance Statement:")
-            y -= 15
-            c.setFont("Helvetica-Oblique", 10)
-            
+        # ── Quality metrics boxes ──
+        overall_ks = 0.0
+        if quality:
+            overall_ks = float(quality.get("overall_quality_score", 0.0))
+        elif summary.get("quality_score"):
+            overall_ks = float(summary["quality_score"])
+
+        risk_score = float(quality.get("privacy_risk_score", 0.0)) * 100 if quality else 0.0
+        corr_sim = float(quality.get("correlation_similarity", 0.0)) * 100 if quality else 0.0
+
+        boxes = [
+            ("Overall Utility", f"{overall_ks*100:.1f}%", (0.0, 0.506, 0.655)),
+            ("Privacy Risk", f"{risk_score:.1f}%", (0.75, 0.27, 0.08) if risk_score > 50 else (0.15, 0.62, 0.42)),
+            ("Correlation Preserved", f"{corr_sim:.1f}%", (0.38, 0.20, 0.70)),
+        ]
+        bw = (W - 80) / 3
+        for i, (label, value, rgb) in enumerate(boxes):
+            bx = 30 + i * (bw + 10)
+            c.setFillColorRGB(*rgb)
+            c.roundRect(bx, y - 52, bw - 5, 48, 6, fill=1, stroke=0)
+            c.setFillColorRGB(1, 1, 1)
+            c.setFont("Helvetica-Bold", 18)
+            c.drawCentredString(bx + (bw - 5) / 2, y - 28, value)
+            c.setFont("Helvetica", 8)
+            c.drawCentredString(bx + (bw - 5) / 2, y - 44, label)
+        y -= 70
+
+        # ── AI Compliance Statement ──
+        if ai_narrative and ai_narrative.get("certificate_statement"):
             import textwrap
-            wrapped_statement = textwrap.wrap(ai_narrative.get("certificate_statement", ""), width=90)
-            for line in wrapped_statement:
-                c.drawString(50, y, line)
-                y -= 15
-            y -= 10
+            c.setFillColorRGB(0.97, 0.97, 0.97)
+            stmt_lines = textwrap.wrap(ai_narrative["certificate_statement"], width=92)
+            box_h = len(stmt_lines) * 12 + 20
+            c.rect(30, y - box_h, W - 60, box_h, fill=1, stroke=0)
+            c.setStrokeColorRGB(0.0, 0.506, 0.655)
+            c.rect(30, y - box_h, 4, box_h, fill=1, stroke=0)
+            c.setFillColorRGB(0.05, 0.05, 0.05)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(42, y - 12, "Official Compliance Statement")
+            c.setFont("Helvetica-Oblique", 8)
+            for j, line in enumerate(stmt_lines):
+                c.drawString(42, y - 24 - j * 12, line)
+            y -= box_h + 14
 
-        # Quality Metrics
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y, "Data Quality & Privacy Risk")
-        y -= 15
-        c.setFont("Helvetica", 10)
-        
-        overall_ks = quality.get("overall_quality_score", 0.0) if quality else summary.get("quality_score", 0.0)
-        c.drawString(50, y, f"Overall Quality Score (KS): {float(overall_ks)*100:.1f}%")
-        
-        if quality and "correlation_similarity" in quality:
-            corr_sim = float(quality['correlation_similarity']) * 100
-            corr_label = "⚠️ POOR" if corr_sim < 50 else "GOOD"
-            c.drawString(300, y, f"Correlation Preserved: {corr_sim:.1f}% ({corr_label})")
-        y -= 15
-        
-        if quality and "privacy_risk_score" in quality:
-            riskScore = float(quality['privacy_risk_score']) * 100
-            riskLabel = "Low (ε > 10)"
-            if riskScore >= 70: riskLabel = "High (No DP applied)"
-            elif riskScore >= 30: riskLabel = "Moderate (ε=1.0 Balanced)"
-            elif riskScore > 0: riskLabel = "Strong (ε < 1.0 Privacy-First)"
-            
-            c.drawString(50, y, f"Privacy Risk Score: {riskScore:.1f}% ({riskLabel})")
-        y -= 20
-        
-        if quality and "ks_test_scores" in quality and quality["ks_test_scores"]:
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(50, y, "Per-Column Quality (KS Scores):")
-            y -= 15
-            c.setFont("Helvetica", 9)
-            ks_items = list(quality["ks_test_scores"].items())
-            
-            # Print in 3 columns
-            for i in range(0, len(ks_items), 3):
-                if y < 50:
-                    c.showPage()
-                    y = 750
-                    c.setFont("Helvetica", 9)
-                
-                col1 = ks_items[i]
-                warning1 = "⚠️ " if col1[1] < 0.70 else ""
-                c.drawString(50, y, f"{warning1}{col1[0]}: {col1[1]:.4f}")
-                
-                if i+1 < len(ks_items):
-                    col2 = ks_items[i+1]
-                    warning2 = "⚠️ " if col2[1] < 0.70 else ""
-                    c.drawString(250, y, f"{warning2}{col2[0]}: {col2[1]:.4f}")
-                    
-                if i+2 < len(ks_items):
-                    col3 = ks_items[i+2]
-                    warning3 = "⚠️ " if col3[1] < 0.70 else ""
-                    c.drawString(450, y, f"{warning3}{col3[0]}: {col3[1]:.4f}")
-                y -= 12
-            y -= 10
-
-        if quality and "correlation_pairs" in quality and quality["correlation_pairs"]:
-            if y < 100:
+        # ── KS bar chart section ──
+        ks_scores = quality.get("ks_test_scores", {}) if quality else {}
+        if ks_scores:
+            if y < 160:
                 c.showPage()
-                y = 750
-            
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(50, y, "Top Feature Correlations (Similarity Score):")
-            y -= 15
-            c.setFont("Helvetica", 9)
-            
-            pair_items = list(quality["correlation_pairs"].items())
-            
-            # Print in 2 columns
-            for i in range(0, len(pair_items), 2):
+                y = H - 50
+            c.setFillColorRGB(0.12, 0.12, 0.12)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(40, y, "Per-Column Data Quality (KS Scores)")
+            y -= 16
+            bar_area_w = W - 220
+            for col, score in list(ks_scores.items())[:20]:
                 if y < 50:
                     c.showPage()
-                    y = 750
-                    c.setFont("Helvetica", 9)
-                
-                pair1 = pair_items[i]
-                c.drawString(50, y, f"{pair1[0]}: {pair1[1]:.4f}")
-                
-                if i+1 < len(pair_items):
-                    pair2 = pair_items[i+1]
-                    c.drawString(300, y, f"{pair2[0]}: {pair2[1]:.4f}")
-                    
-                y -= 12
+                    y = H - 50
+                frac = min(max(float(score), 0.0), 1.0)
+                color = (0.18, 0.72, 0.48) if frac >= 0.70 else (0.90, 0.35, 0.20)
+                c.setFillColorRGB(0.15, 0.15, 0.15)
+                c.setFont("Helvetica", 8)
+                c.drawString(40, y + 2, str(col)[:22])
+                _draw_colored_bar(c, 180, y, bar_area_w, 12, frac, color)
+                c.drawString(180 + bar_area_w + 6, y + 2, f"{frac:.3f}")
+                y -= 18
             y -= 10
 
-        # Compliance Actions
+        # ── Compliance actions table ──
         if approval_payload and approval_payload.decisions:
-            if y < 100:
+            if y < 140:
                 c.showPage()
-                y = 750
-                
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y, "Approved Compliance Actions")
-            y -= 20
-            
-            c.setFont("Helvetica", 9)
-            for d in approval_payload.decisions:
+                y = H - 50
+            c.setFillColorRGB(0.12, 0.12, 0.12)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(40, y, "Approved Compliance Actions")
+            y -= 14
+
+            # Table header
+            c.setFillColorRGB(0.0, 0.506, 0.655)
+            c.rect(30, y - 2, W - 60, 16, fill=1, stroke=0)
+            c.setFillColorRGB(1, 1, 1)
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(38, y + 2, "Column Name")
+            c.drawString(220, y + 2, "Enforced Action")
+            c.drawString(380, y + 2, "ε Budget")
+            c.drawString(450, y + 2, "Approved")
+            y -= 16
+
+            c.setFont("Helvetica", 8)
+            for i, d in enumerate(approval_payload.decisions):
                 if y < 50:
                     c.showPage()
-                    y = 750
-                    c.setFont("Helvetica", 9)
-                
+                    y = H - 50
+                    c.setFont("Helvetica", 8)
+                if i % 2 == 0:
+                    c.setFillColorRGB(0.94, 0.98, 1.0)
+                    c.rect(30, y - 3, W - 60, 14, fill=1, stroke=0)
+                c.setFillColorRGB(0.1, 0.1, 0.1)
                 action = d.override_action if d.override_action else "RETAIN"
-                eps_str = f"(ε={d.epsilon_budget})" if action == "RETAIN_WITH_NOISE" else ""
-                
-                c.setFont("Helvetica-Bold", 9)
-                c.drawString(50, y, f"Column: {d.column_name}")
-                c.setFont("Helvetica", 9)
-                c.drawString(200, y, f"Action: {action} {eps_str}")
-                y -= 15
-                
-                # We don't have the LLM regulation_id directly in approval_payload.decisions unfortunately,
-                # but we show the action and epsilon budget to satisfy the privacy guarantee requirement.
-                if action == "SUPPRESS":
-                    c.drawString(60, y, "Reason: Column excluded from synthetic dataset entirely to protect privacy.")
-                    y -= 12
+                eps = f"{d.epsilon_budget}" if action == "RETAIN_WITH_NOISE" else "—"
+                approved = "✓ Yes" if d.approved else "✗ No"
+                c.drawString(38, y, str(d.column_name)[:26])
+                c.drawString(220, y, action)
+                c.drawString(380, y, eps)
+                c.drawString(450, y, approved)
+                y -= 14
 
         c.save()
         return pdf_path
@@ -1070,6 +1192,25 @@ async def run_core_pipeline(job_id: str) -> None:
             ai_narrative
         )
 
+        # Generate colourful audit trail PDF
+        decisions_list = [
+            {
+                "column_name": d.column_name,
+                "override_action": d.override_action,
+                "compliance_action": d.override_action or "RETAIN",
+                "epsilon_budget": d.epsilon_budget,
+            }
+            for d in (approval_payload.decisions if approval_payload else [])
+        ]
+        audit_pdf_path = await asyncio.to_thread(
+            generate_audit_report,
+            job_id,
+            {"source_file": filename, "rows": int(profile["rows"])},
+            outputs_dir,
+            quality,
+            decisions_list,
+        )
+
         latest_result = {
             "meta": {
                 "processed_at": now_iso(),
@@ -1085,14 +1226,21 @@ async def run_core_pipeline(job_id: str) -> None:
             "correlation": profile["correlation"],
             "quality": quality,
             "downloads": {
-                "synthetic_csv": str(synth_path),
-                "audit_trail": str(audit_path),
-                "certificate": str(cert_path),
+                "Synthetic Dataset (.csv)": str(synth_path),
+                "Audit Trail Report (.pdf)": str(audit_pdf_path),
+                "Compliance Certificate (.pdf)": str(cert_path),
             },
         }
 
         dump_json(OUTPUTS_DIR / "result.json", latest_result)
         dump_json(OUTPUTS_DIR / "status.json", {"state": "done", "message": f"Job {job_id} completed", "ts": now_iso()})
+
+        # ── Auto-save to persistent cache ────────────────────────────────────────
+        await asyncio.to_thread(
+            _save_synthesis_to_cache,
+            job_id, filename, quality, profile,
+            synth_path, audit_pdf_path, cert_path,
+        )
 
         update_job_phase(job_id, "COMPLETE")
         insert_agent_log(job_id, "Orchestrator", "COMPLETE", "Pipeline completed successfully")
@@ -1334,12 +1482,117 @@ async def run_bias_audit(audit_id: str, input_file: Path, source_job_id: Optiona
             },
         )
         insert_agent_log(audit_id, "Bias Interpreter Agent", "COMPLETE", "Bias audit completed")
+        # Auto-save to persistent cache
+        await asyncio.to_thread(_save_bias_to_cache, audit_id, input_file.name, findings, outputs_dir)
         await asyncio.to_thread(cleanup_bias_input_file, input_file)
     except Exception as exc:
         update_job_phase(audit_id, "FAILED")
         await emit_event("bias", audit_id, "PIPELINE_ERROR", {"error": str(exc)})
         insert_agent_log(audit_id, "Bias Interpreter Agent", "FAILED", str(exc), "ERROR")
         await asyncio.to_thread(cleanup_bias_input_file, input_file)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CACHE HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _save_synthesis_to_cache(
+    job_id: str,
+    filename: str,
+    quality: Dict[str, Any],
+    profile: Dict[str, Any],
+    synth_path: Path,
+    audit_pdf_path: Path,
+    cert_path: Path,
+) -> None:
+    """Copy outputs to CACHE_DIR and record metadata in cached_jobs table."""
+    import uuid as _uuid
+    cache_id = _uuid.uuid4().hex
+    job_cache_dir = CACHE_DIR / cache_id
+    job_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    has_csv = synth_path.exists()
+    has_audit = audit_pdf_path.exists()
+    has_cert = cert_path.exists()
+
+    if has_csv:
+        shutil.copy2(synth_path, job_cache_dir / "synthetic_data.csv")
+    if has_audit:
+        shutil.copy2(audit_pdf_path, job_cache_dir / audit_pdf_path.name)
+    if has_cert:
+        shutil.copy2(cert_path, job_cache_dir / cert_path.name)
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO cached_jobs (
+                cache_id, job_id, job_type, label, source_file, cached_at,
+                overall_quality_score, privacy_risk_score, correlation_similarity,
+                rows, columns, has_synthetic_csv, has_audit_pdf, has_certificate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                cache_id, job_id, "SYNTHESIS",
+                f"{filename} — {now_iso()[:10]}",
+                filename,
+                now_iso(),
+                quality.get("overall_quality_score", 0.0),
+                quality.get("privacy_risk_score", 0.0),
+                quality.get("correlation_similarity", 0.0),
+                int(profile.get("rows", 0)),
+                int(profile.get("columns", 0)),
+                has_csv, has_audit, has_cert,
+            ],
+        )
+    finally:
+        conn.close()
+
+
+def _save_bias_to_cache(
+    audit_id: str,
+    filename: str,
+    findings: List[Dict[str, Any]],
+    outputs_dir: Path,
+) -> None:
+    """Copy bias audit outputs to CACHE_DIR and record metadata."""
+    import uuid as _uuid
+    cache_id = _uuid.uuid4().hex
+    job_cache_dir = CACHE_DIR / cache_id
+    job_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    report_path = outputs_dir / "bias_audit_report.txt"
+    findings_path = outputs_dir / "bias_findings.json"
+    has_report = report_path.exists()
+    has_findings = findings_path.exists()
+
+    if has_report:
+        shutil.copy2(report_path, job_cache_dir / "bias_audit_report.txt")
+    if has_findings:
+        shutil.copy2(findings_path, job_cache_dir / "bias_findings.json")
+
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO cached_jobs (
+                cache_id, job_id, job_type, label, source_file, cached_at,
+                overall_quality_score, privacy_risk_score, correlation_similarity,
+                rows, columns, has_synthetic_csv, has_audit_pdf, has_certificate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                cache_id, audit_id, "BIAS_AUDIT",
+                f"Bias: {filename} — {now_iso()[:10]}",
+                filename,
+                now_iso(),
+                0.0, 0.0, 0.0,
+                len(findings), 0,
+                False, has_report, has_findings,
+            ],
+        )
+    finally:
+        conn.close()
 
 
 app = FastAPI(title="Antraa Backend", version="1.0.0")
@@ -1589,9 +1842,9 @@ async def get_results(job_id: str) -> Dict[str, Any]:
             for c in columns
         ],
         "downloads": {
-            "synthetic_csv": f"/api/download/{job_id}/synthetic_csv",
-            "audit_trail": f"/api/download/{job_id}/audit_trail",
-            "certificate": f"/api/download/{job_id}/certificate",
+            "Synthetic Dataset (.csv)": f"/api/download/{job_id}/synthetic_csv",
+            "Audit Trail Report (.pdf)": f"/api/download/{job_id}/audit_trail_pdf",
+            "Compliance Certificate (.pdf)": f"/api/download/{job_id}/certificate",
         },
     }
 
@@ -1600,6 +1853,10 @@ def get_job_output_file(job_id: str, file_type: str) -> Path:
     outputs_dir = JOBS_DIR / job_id / "outputs"
     if file_type == "synthetic_csv":
         return outputs_dir / "synthetic_data.csv"
+    if file_type == "audit_trail_pdf":
+        # Serve PDF if available, fallback to JSON
+        pdf = outputs_dir / "audit_trail.pdf"
+        return pdf if pdf.exists() else outputs_dir / "audit_trail.json"
     if file_type == "audit_trail":
         return outputs_dir / "audit_trail.json"
     if file_type == "certificate":
@@ -1774,6 +2031,134 @@ async def download_bias_report(audit_id: str, file_type: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Bias output file not found")
 
     return FileResponse(path=str(path), filename=path.name)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CACHE ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/cache/list")
+async def list_cache() -> Dict[str, Any]:
+    """Return all cached job results (synthesis + bias audits)."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT cache_id, job_id, job_type, label, source_file, cached_at,
+                   overall_quality_score, privacy_risk_score, correlation_similarity,
+                   rows, columns, has_synthetic_csv, has_audit_pdf, has_certificate
+            FROM cached_jobs
+            ORDER BY cached_at DESC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    items = []
+    for r in rows:
+        cache_id = r[0]
+        cache_dir = CACHE_DIR / cache_id
+        downloads: Dict[str, str] = {}
+        if r[11] and (cache_dir / "synthetic_data.csv").exists():
+            downloads["Synthetic Dataset (.csv)"] = f"/api/cache/download/{cache_id}/synthetic_csv"
+        if r[12]:
+            for fname in ["audit_trail.pdf", "bias_audit_report.txt"]:
+                if (cache_dir / fname).exists():
+                    label = "Audit Trail (.pdf)" if fname.endswith(".pdf") else "Bias Report (.txt)"
+                    downloads[label] = f"/api/cache/download/{cache_id}/{fname}"
+        if r[13]:
+            for fname in ["compliance_certificate.pdf", "bias_findings.json"]:
+                if (cache_dir / fname).exists():
+                    label = "Compliance Certificate (.pdf)" if fname.endswith(".pdf") else "Bias Findings (.json)"
+                    downloads[label] = f"/api/cache/download/{cache_id}/{fname}"
+        items.append({
+            "cache_id":                 r[0],
+            "job_id":                   r[1],
+            "job_type":                 r[2],
+            "label":                    r[3],
+            "source_file":              r[4],
+            "cached_at":                str(r[5]),
+            "overall_quality_score":    r[6],
+            "privacy_risk_score":       r[7],
+            "correlation_similarity":   r[8],
+            "rows":                     r[9],
+            "columns":                  r[10],
+            "downloads":                downloads,
+        })
+    return {"items": items, "total": len(items)}
+
+
+@app.get("/api/cache/detail/{cache_id}")
+async def get_cache_detail(cache_id: str) -> Dict[str, Any]:
+    """Return full detail for one cached result, including findings/quality."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM cached_jobs WHERE cache_id = ?",
+            [cache_id],
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Cache entry not found")
+
+    cache_dir = CACHE_DIR / cache_id
+    extra: Dict[str, Any] = {}
+
+    # Load bias findings if present
+    findings_path = cache_dir / "bias_findings.json"
+    if findings_path.exists():
+        with open(findings_path, encoding="utf-8") as f:
+            extra["bias_findings"] = json.load(f)
+
+    return {
+        "cache_id":               row[0],
+        "job_id":                 row[1],
+        "job_type":               row[2],
+        "label":                  row[3],
+        "source_file":            row[4],
+        "cached_at":              str(row[5]),
+        "overall_quality_score":  row[6],
+        "privacy_risk_score":     row[7],
+        "correlation_similarity": row[8],
+        "rows":                   row[9],
+        "columns":                row[10],
+        **extra,
+    }
+
+
+@app.get("/api/cache/download/{cache_id}/{filename}")
+async def download_cache_file(cache_id: str, filename: str) -> FileResponse:
+    """Serve a cached file by cache_id + filename."""
+    # Normalise special keys back to real filenames
+    name_map = {
+        "synthetic_csv": "synthetic_data.csv",
+    }
+    real_name = name_map.get(filename, filename)
+    path = CACHE_DIR / cache_id / real_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Cached file not found")
+    return FileResponse(path=str(path), filename=real_name)
+
+
+@app.delete("/api/cache/{cache_id}")
+async def delete_cache_entry(cache_id: str) -> Dict[str, str]:
+    """Remove a cache entry and its associated files."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT cache_id FROM cached_jobs WHERE cache_id = ?", [cache_id]).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Cache entry not found")
+        conn.execute("DELETE FROM cached_jobs WHERE cache_id = ?", [cache_id])
+    finally:
+        conn.close()
+
+    cache_dir = CACHE_DIR / cache_id
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+    return {"status": "deleted", "cache_id": cache_id}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

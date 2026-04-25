@@ -77,6 +77,9 @@ export default function ResultsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
+            <Link href="/cache">📦 View Cache</Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link href={`/pattern/${params.job_id}`}>Run Pattern Analysis</Link>
           </Button>
           <Button variant="outline" asChild>
@@ -155,22 +158,12 @@ export default function ResultsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Column</TableHead>
-                      <TableHead>Epsilon (ε)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(data.column_summary || []).map((item: any) => (
                       <TableRow key={item.column_name}>
                         <TableCell className="font-medium">{item.column_name}</TableCell>
-                        <TableCell>
-                          {item.compliance_action === "RETAIN_WITH_NOISE" ? (
-                            <span className="rounded bg-amber-500/20 px-2 py-1 text-xs text-amber-500 font-bold">
-                              {perColEps[item.column_name] || item.epsilon_budget}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
