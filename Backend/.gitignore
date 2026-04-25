@@ -1,7 +1,9 @@
-# Python virtual environment
+# ── Python virtual environment ────────────────────────────────────────────────
 .venv/
+venv/
+ENV/
 
-# Python bytecode and caches
+# ── Python bytecode and caches ────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
@@ -10,15 +12,23 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Local runtime state
+# ── Runtime state (generated at run-time, never commit) ───────────────────────
 data.db
+data.db-journal
 outputs/
 tmp_jobs/
 tmp_bias/
 
+# Cache directory (auto-populated on pipeline completion)
+cache/
+
+# Uploaded source files
+uploads/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
 # Local Node artifacts that are not used by the backend
 package-lock.json
 uploads/package-lock.json
-
-# Optional local logs
-*.log

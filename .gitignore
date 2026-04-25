@@ -1,20 +1,36 @@
-# Generated project structure file
+# ── Generated project structure ───────────────────────────────────────────────
 project_structure.txt
 
-# Node / frontend artifacts
+# ── Node / Frontend ───────────────────────────────────────────────────────────
 node_modules/
+frontend/node_modules/
 Frontend/node_modules/
+frontend/.next/
 Frontend/.next/
+frontend/out/
 Frontend/out/
+frontend/build/
+Frontend/build/
+frontend/.turbo/
 Frontend/.turbo/
+frontend/.vercel/
 Frontend/.vercel/
+frontend/coverage/
 Frontend/coverage/
+frontend/.npm/
 Frontend/.npm/
+frontend/.eslintcache
 Frontend/.eslintcache
+frontend/*.tsbuildinfo
 Frontend/*.tsbuildinfo
+frontend/.env*
 Frontend/.env*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
 
-# Python / backend artifacts
+# ── Python / Backend ──────────────────────────────────────────────────────────
 Backend/.venv/
 Backend/venv/
 Backend/ENV/
@@ -23,23 +39,29 @@ Backend/*.py[cod]
 Backend/.pytest_cache/
 Backend/.mypy_cache/
 Backend/.ruff_cache/
+
+# Backend runtime state (never commit)
 Backend/data.db
+Backend/data.db-journal
 Backend/outputs/
 Backend/tmp_jobs/
 Backend/tmp_bias/
+Backend/cache/
+Backend/uploads/
 Backend/*.log
 
-# Python bytecode and caches
+# ── Python bytecode & caches (repo-wide) ─────────────────────────────────────
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-*.log
 *.sqlite3
 *.db-journal
 
-# Frontend / Next.js
+# ── Frontend / Next.js (repo-wide) ───────────────────────────────────────────
 .next/
 /out/
 /build
@@ -47,26 +69,33 @@ __pycache__/
 .env*
 *.tsbuildinfo
 
-# Virtual environments
+# ── Virtual environments ──────────────────────────────────────────────────────
 .venv/
 venv/
 ENV/
 
-# OS generated files
+# ── OS generated files ────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 Desktop.ini
 
-# VS Code / IDE
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 .history/
 
-# Data files (Exclude raw/synthetic CSV and Parquet but retain configs)
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Raw data files (exclude CSV/Parquet blobs; keep config files) ─────────────
 *.csv
 *.parquet
 
-# Important Exceptions
+# ── Important exceptions ──────────────────────────────────────────────────────
 !package.json
 !package-lock.json
 !components.json
