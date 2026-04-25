@@ -286,6 +286,26 @@ export default function FineTunePage() {
                   Send
                 </Button>
               </div>
+              <div className="mt-5 rounded-xl border border-white/5 bg-[#0d1317]/50 p-4 shadow-inner">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#00AFB9]">API Endpoint Integration</p>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 px-2 text-[10px] bg-white/5 hover:bg-white/10 text-white rounded border border-white/10"
+                    onClick={() => navigator.clipboard.writeText(`curl -X POST http://localhost:8000/api/finetune/chat/${params.job_id} \\\n  -H "Content-Type: application/json" \\\n  -d '{"message": "Your question here"}'`)}
+                  >
+                    Copy cURL
+                  </Button>
+                </div>
+                <div className="relative">
+                  <pre className="overflow-x-auto rounded-lg bg-[#05080a] p-3 text-xs text-[#00AFB9] font-mono border border-white/5 custom-scrollbar">
+                    {`curl -X POST http://localhost:8000/api/finetune/chat/${params.job_id} \\
+  -H "Content-Type: application/json" \\
+  -d '{"message": "Your question here"}'`}
+                  </pre>
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
