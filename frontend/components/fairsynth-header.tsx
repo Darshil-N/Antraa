@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Info,
   Sparkles,
+  HardDrive
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -21,6 +22,7 @@ const links = [
   { href: "/results/demo-job", label: "Results", icon: ChartColumnBig },
   { href: "/bias-audit", label: "Bias Audit", icon: ShieldAlert },
   { href: "/finetune/demo-job", label: "Fine-Tune", icon: Sparkles },
+  { href: "/cache", label: "Cache", icon: HardDrive },
   { href: "/about", label: "About", icon: Info },
 ]
 
