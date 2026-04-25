@@ -96,9 +96,9 @@ export function AnimatedSphere() {
               Step A: spin around Z  (clockwise, fast)
               Step B: tilt the spin axis 45° via X rotation
               Step C: very slow precession around Y                          */
-      const spin = time * 0.50;
+      const spin = time * 0.14;
       const tilt = Math.PI / 4;          // 45° — matches reference image
-      const prec = time * 0.04;
+      const prec = time * 0.012;
 
       /* 4 ── SURFACE POINTS
               Step of 0.115 → ~1 500 points → solid sphere silhouette       */

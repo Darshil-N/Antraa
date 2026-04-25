@@ -3,37 +3,40 @@
 import { useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ShieldCheck, Zap, FileCheck, ArrowRight, Lock, CheckCircle2 } from "lucide-react"
 
 const sensitiveHints = ["ssn", "dob", "email", "phone", "account", "address", "gender", "race"]
 const API_BASE = "http://localhost:8000/api"
 
-/* ── Animated Folder SVG ── */
-function FolderIcon({ hovered }: { hovered: boolean }) {
+const ease = [0.22, 1, 0.36, 1] as const
+
+/* ── Pipeline steps shown in the right panel ── */
+const STEPS = [
+  { n: "01", label: "Upload",      sub: "CSV or Parquet file",       done: false },
+  { n: "02", label: "Schema",      sub: "Auto-detect & tag columns", done: false },
+  { n: "03", label: "Policy Map",  sub: "HIPAA / GDPR / GLBA",       done: false },
+  { n: "04", label: "Synthesise",  sub: "ε-DP generation",           done: false },
+  { n: "05", label: "Validate",    sub: "Bias & fidelity checks",    done: false },
+]
+
+/* ── Animated folder ── */
+function FolderIcon({ active }: { active: boolean }) {
   return (
     <svg fill="none" viewBox="0 0 24 24" className="h-full w-full">
-      {/* Folder top */}
       <motion.path
         d="M4 7V17C4 18.1046 4.89543 19 6 19H18C19.1046 19 20 18.1046 20 17V9C20 7.89543 19.1046 7 18 7H11L9 5H6C4.89543 5 4 5.89543 4 7Z"
-        stroke="#3b82f6"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        animate={{ translateY: hovered ? -5 : 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 24 }}
+        stroke="#0081A7" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none"
+        animate={{ translateY: active ? -4 : 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
       />
-      {/* Folder front */}
       <motion.path
         d="M2 11C2 10.4477 2.44772 10 3 10H21C21.5523 10 22 10.4477 22 11V17C22 18.1046 21.1046 19 20 19H4C2.89543 19 2 18.1046 2 17V11Z"
-        stroke="#3b82f6"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="rgba(59,130,246,0.07)"
-        animate={{ translateY: hovered ? 4 : 0 }}
-        transition={{ type: "spring", stiffness: 320, damping: 24 }}
+        stroke="#0081A7" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+        fill="rgba(0,129,167,0.08)"
+        animate={{ translateY: active ? 3 : 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 22 }}
       />
     </svg>
   )
@@ -41,41 +44,39 @@ function FolderIcon({ hovered }: { hovered: boolean }) {
 
 export default function UploadPage() {
   const router = useRouter()
-  
-  // File status
-  const [fileName, setFileName] = useState<string>("")
-  const [file, setFile] = useState<File | null>(null)
-  const [columns, setColumns] = useState<string[]>([])
-  const [previewRows, setPreviewRows] = useState<any[]>([])
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  // UI status
+  const [fileName, setFileName]         = useState("")
+  const [columns, setColumns]           = useState<string[]>([])
+  const [previewRows, setPreviewRows]   = useState<any[]>([])
+  const [jobId, setJobId]               = useState<string | null>(null)
+  const [isUploading, setIsUploading]   = useState(false)
+  const [uploadDone, setUploadDone]     = useState(false)
+  const [error, setError]               = useState<string | null>(null)
+
   const [folderHovered, setFolderHovered] = useState(false)
-  const [datasetName, setDatasetName] = useState("")
-  const [dataType, setDataType] = useState("CSV (Tabular)")
-  const [dragging, setDragging] = useState(false)
+  const [datasetName, setDatasetName]     = useState("")
+  const [dataType, setDataType]           = useState("CSV (Tabular)")
+  const [dragging, setDragging]           = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleFile(selectedFile: File | undefined) {
     if (!selectedFile) return
     setFileName(selectedFile.name)
-    setFile(selectedFile)
     setIsUploading(true)
+    setUploadDone(false)
     setError(null)
 
     const formData = new FormData()
     formData.append("file", selectedFile)
 
     try {
-      const res = await fetch(`${API_BASE}/upload-dataset`, { method: "POST", body: formData })
+      const res  = await fetch(`${API_BASE}/upload-dataset`, { method: "POST", body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || "Upload failed")
-      
       setJobId(data.job_id)
       setColumns(data.columns)
       setPreviewRows(data.preview)
+      setUploadDone(true)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -84,220 +85,279 @@ export default function UploadPage() {
   }
 
   function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragging(false)
+    e.preventDefault(); setDragging(false)
     handleFile(e.dataTransfer.files?.[0])
   }
 
+  const canAnalyse = !!jobId && !isUploading
+
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-10 lg:px-8">
-      {/* ── Animated Upload Card ── */}
-      <div className="flex justify-center">
+    <main className="mx-auto w-full max-w-7xl px-6 py-12 lg:px-12">
+
+      {/* ── Page header ── */}
+      <motion.div
+        className="mb-10"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Link href="/" className="text-xs font-medium text-[#0081A7]/60 hover:text-[#0081A7] transition-colors">
+            Home
+          </Link>
+          <span className="text-[#0081A7]/30 text-xs">›</span>
+          <span className="text-xs font-medium text-[#003d4f]">Upload Dataset</span>
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight text-[#003d4f] lg:text-4xl flex items-center gap-4">
+          Upload Dataset
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#F07167]/20 bg-[#F07167]/8 px-3 py-1 text-xs font-semibold text-[#F07167]">
+            <Zap className="h-3 w-3" />
+            &lt;2s synthesis
+          </span>
+        </h1>
+        <p className="mt-2 text-sm text-[#005f7a]/65 max-w-lg">
+          Drop your CSV or Parquet file to begin the compliance pipeline. We’ll profile, map, and synthesise — all in one flow.
+        </p>
+      </motion.div>
+
+      {/* ── Two-column layout ── */}
+      <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
+
+        {/* ════ LEFT: Form ════ */}
         <motion.div
-          className="w-full max-w-2xl overflow-hidden rounded-3xl p-[1px]"
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(59,130,246,0.5) 0%, rgba(0,175,185,0.35) 50%, rgba(59,130,246,0.2) 100%)",
-            boxShadow: "0 24px 64px rgba(59,130,246,0.14)",
-          }}
-          initial={{ opacity: 0, y: 24 }}
+          className="space-y-6"
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ delay: 0.08, duration: 0.6, ease }}
         >
+          {/* ── Drop Zone ── */}
           <div
-            className="relative overflow-hidden rounded-[calc(1.5rem-1px)] p-8"
+            role="button"
+            tabIndex={0}
+            aria-label="File drop zone"
+            className={`relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed px-8 py-16 text-center
+              transition-all duration-300 outline-none
+              focus-visible:ring-2 focus-visible:ring-[#0081A7]/40
+              ${isUploading ? "pointer-events-none opacity-60" : ""}`}
             style={{
-              background:
-                "linear-gradient(145deg, rgba(255,255,255,0.92) 0%, rgba(248,251,255,0.88) 100%)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
+              borderColor: dragging ? "#0081A7" : uploadDone ? "#00AFB9" : "rgba(0,129,167,0.28)",
+              background:  dragging
+                ? "rgba(0,129,167,0.06)"
+                : uploadDone
+                  ? "rgba(0,175,185,0.04)"
+                  : "rgba(255,255,255,0.45)",
+              backdropFilter: "blur(10px)",
             }}
+            onMouseEnter={() => setFolderHovered(true)}
+            onMouseLeave={() => setFolderHovered(false)}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
           >
-            {/* Ambient blobs */}
-            <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-blue-400/10 blur-3xl" />
-            <div className="pointer-events-none absolute -left-8 -bottom-8 h-40 w-40 rounded-full bg-[#00AFB9]/8 blur-2xl" />
-
-            {/* Header */}
-            <div className="relative mb-7">
-              <h1 className="text-2xl font-bold text-[#1e293b]">Upload Dataset</h1>
-              <p className="mt-1.5 text-sm text-[#64748b]">
-                Ready to process your data? Drop it here — accepted formats: CSV &amp; Parquet (max 500 MB).
-              </p>
-            </div>
-
-            {/* Drop Zone */}
+            {/* animated border glow */}
             <div
-              className={`relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed px-6 py-12 text-center transition-all duration-400 ${isUploading ? 'opacity-60 pointer-events-none' : ''}`}
+              className="pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-500"
               style={{
-                borderColor: dragging ? "#3b82f6" : "#e2e8f0",
-                background: dragging ? "rgba(59,130,246,0.07)" : "rgba(248,251,255,0.9)",
+                background: "radial-gradient(ellipse at 60% 40%, rgba(0,175,185,0.10), transparent 70%)",
+                opacity: folderHovered || dragging ? 1 : 0,
               }}
-              onMouseEnter={() => setFolderHovered(true)}
-              onMouseLeave={() => setFolderHovered(false)}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragging(true)
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => inputRef.current?.click()}
-            >
-              {/* Hover border glow */}
-              <div
-                className="pointer-events-none absolute inset-0 rounded-2xl transition-opacity duration-400"
-                style={{
-                  background: "linear-gradient(135deg, rgba(59,130,246,0.06), transparent)",
-                  opacity: folderHovered ? 1 : 0,
-                }}
-              />
+            />
 
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".csv,.parquet"
-                className="sr-only"
-                onChange={(e) => handleFile(e.target.files?.[0])}
-              />
+            <input
+              ref={inputRef} type="file" accept=".csv,.parquet"
+              className="sr-only"
+              onChange={(e) => handleFile(e.target.files?.[0])}
+            />
 
-              <div className="relative flex flex-col items-center">
-                <div className="mb-4 h-16 w-16">
-                  <FolderIcon hovered={folderHovered || dragging} />
-                </div>
-                <h3 className="text-lg font-semibold text-[#334155]">
-                  {fileName ? (isUploading ? `Uploading: ${fileName}...` : fileName) : "Drag & Drop files here"}
-                </h3>
+            <div className="relative flex flex-col items-center gap-3">
+              <AnimatePresence mode="wait">
+                {uploadDone ? (
+                  <motion.div
+                    key="done"
+                    initial={{ scale: 0.7, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-[#00AFB9]/15"
+                  >
+                    <CheckCircle2 className="h-8 w-8 text-[#00AFB9]" />
+                  </motion.div>
+                ) : (
+                  <motion.div key="folder" className="h-14 w-14">
+                    <FolderIcon active={folderHovered || dragging} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div>
+                <p className="text-base font-semibold text-[#003d4f]">
+                  {isUploading
+                    ? `Uploading ${fileName}…`
+                    : uploadDone
+                      ? fileName
+                      : "Drag & drop your file here"}
+                </p>
                 <p className="mt-1 text-sm text-[#94a3b8]">
-                  {isUploading ? "Please wait..." : (
-                    <>
-                      or{" "}
-                      <span className="font-semibold text-blue-500 underline underline-offset-2">
-                        Browse Local Files
-                      </span>
-                    </>
-                  )}
+                  {isUploading ? "Please wait…"
+                    : uploadDone ? (
+                      <span className="text-[#00AFB9] font-medium">File ready ✓ — click to replace</span>
+                    ) : (
+                      <>or <span className="font-semibold text-[#0081A7] underline underline-offset-2">browse local files</span></>
+                    )}
                 </p>
                 {!fileName && !isUploading && (
-                  <p className="mt-3 text-[11px] text-[#cbd5e1] uppercase tracking-widest">
+                  <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-[#cbd5e1]">
                     CSV · Parquet · up to 500 MB
                   </p>
                 )}
-                {error && <p className="mt-4 text-sm font-semibold text-red-500">Error: {error}</p>}
               </div>
-            </div>
 
-            {/* Input Grid */}
-            <div className={`mt-7 grid grid-cols-2 gap-5 ${isUploading ? 'opacity-60 pointer-events-none' : ''}`}>
-              <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
-                  Dataset Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="Sales_Report_Q1"
-                  value={datasetName}
-                  onChange={(e) => setDatasetName(e.target.value)}
-                  className="rounded-xl border border-[#e2e8f0] bg-white px-4 py-3 text-sm text-[#1e293b] outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#94a3b8]">
-                  Data Type
-                </label>
-                <select
-                  value={dataType}
-                  onChange={(e) => setDataType(e.target.value)}
-                  className="rounded-xl border border-[#e2e8f0] bg-white px-4 py-3 text-sm text-[#1e293b] outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 appearance-none"
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-lg bg-red-50 px-4 py-2 text-xs font-semibold text-red-500"
                 >
-                  <option>CSV (Tabular)</option>
-                  <option>JSON (Unstructured)</option>
-                  <option>Parquet</option>
-                </select>
-              </div>
+                  ⚠ {error}
+                </motion.p>
+              )}
             </div>
+          </div>
 
-            {/* Footer Buttons */}
-            <div className="mt-8 flex items-center justify-end gap-3">
+          {/* ── Input row ── */}
+          <div className={`grid grid-cols-2 gap-4 ${isUploading ? "pointer-events-none opacity-50" : ""}`}>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#94a3b8]">
+                Dataset Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Sales_Report_Q1"
+                value={datasetName}
+                onChange={(e) => setDatasetName(e.target.value)}
+                className="rounded-xl border border-[#e2e8f0] bg-white/65 px-4 py-3 text-sm text-[#1e293b]
+                  placeholder:text-[#cbd5e1] outline-none backdrop-blur-sm
+                  transition-all duration-200
+                  focus:border-[#0081A7] focus:bg-white focus:ring-2 focus:ring-[#0081A7]/15"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#94a3b8]">
+                Data Type
+              </label>
+              <select
+                value={dataType}
+                onChange={(e) => setDataType(e.target.value)}
+                className="rounded-xl border border-[#e2e8f0] bg-white/65 px-4 py-3 text-sm text-[#1e293b]
+                  outline-none backdrop-blur-sm appearance-none cursor-pointer
+                  transition-all duration-200
+                  focus:border-[#0081A7] focus:bg-white focus:ring-2 focus:ring-[#0081A7]/15"
+              >
+                <option>CSV (Tabular)</option>
+                <option>JSON (Unstructured)</option>
+                <option>Parquet</option>
+              </select>
+            </div>
+          </div>
+
+          {/* ── Action row ── */}
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center gap-3">
               <Link
                 href="/"
-                className="rounded-xl px-5 py-3 text-sm font-semibold text-[#64748b] transition-colors hover:bg-[#f1f5f9]"
+                className="rounded-xl px-5 py-2.5 text-sm font-semibold text-[#64748b]
+                  transition-all duration-200 hover:bg-white/60 hover:text-[#334155]"
               >
                 Cancel
               </Link>
               <Link
                 href="/bias-audit"
-                className="rounded-xl px-5 py-3 text-sm font-semibold text-[#3b82f6] border border-[#3b82f6]/20 transition-colors hover:bg-[#3b82f6]/5"
+                className="rounded-xl border border-[#0081A7]/20 bg-white/40 px-5 py-2.5
+                  text-sm font-semibold text-[#0081A7] backdrop-blur-sm
+                  transition-all duration-200 hover:bg-[#0081A7]/8 hover:border-[#0081A7]/40"
               >
-                Run Bias Audit Only
+                Bias Audit Only
               </Link>
-              <motion.button
-                disabled={!jobId || isUploading}
-                className={`rounded-xl px-6 py-3 text-sm font-bold text-white shadow-lg transition-all ${
-                  !jobId || isUploading
-                    ? "opacity-50 cursor-not-allowed bg-gray-400"
-                    : ""
-                }`}
-                style={jobId && !isUploading ? { background: "linear-gradient(135deg, #3b82f6 0%, #0081A7 100%)" } : {}}
-                whileHover={jobId && !isUploading ? { y: -2, boxShadow: "0 10px 28px rgba(59,130,246,0.42)" } : {}}
-                whileTap={jobId && !isUploading ? { scale: 0.97 } : {}}
-                onClick={() => router.push(`/pipeline/${jobId}`)}
-              >
-                Start Analysis →
-              </motion.button>
             </div>
-          </div>
-        </motion.div>
-      </div>
 
-      {/* ── Preview Table ── */}
-      <motion.div
-        className="mt-10 overflow-hidden rounded-3xl p-[1px]"
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(0,129,167,0.25) 0%, rgba(0,175,185,0.15) 100%)",
-          boxShadow: "0 12px 40px rgba(0,129,167,0.1)",
-        }}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.5 }}
-      >
-        <div
-          className="rounded-[calc(1.5rem-1px)] p-6"
-          style={{
-            background: "rgba(255,255,255,0.85)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-          }}
-        >
-          <h2 className="mb-4 text-lg font-bold text-[#004a5e]">Preview (first rows)</h2>
-          <div className="overflow-x-auto min-h-[150px]">
+            {/* Start Analysis — always clearly visible */}
+            <motion.button
+              id="start-analysis-btn"
+              disabled={!canAnalyse}
+              onClick={() => canAnalyse && router.push(`/pipeline/${jobId}`)}
+              className={`group relative flex items-center gap-2.5 overflow-hidden rounded-xl
+                px-7 py-3 text-sm font-bold tracking-wide transition-all duration-300
+                ${canAnalyse
+                  ? "text-white shadow-[0_8px_28px_rgba(0,129,167,0.32)] hover:shadow-[0_14px_36px_rgba(0,129,167,0.48)] hover:-translate-y-0.5"
+                  : "cursor-not-allowed text-[#94a3b8] bg-[#f1f5f9] border border-[#e2e8f0]"
+                }`}
+              style={canAnalyse ? {
+                background: "linear-gradient(135deg, #0081A7 0%, #00AFB9 100%)",
+              } : {}}
+              whileHover={canAnalyse ? { scale: 1.02 } : {}}
+              whileTap={canAnalyse ? { scale: 0.97 } : {}}
+            >
+              {/* shine sweep on hover */}
+              {canAnalyse && (
+                <span
+                  className="pointer-events-none absolute inset-0 translate-x-[-100%] skew-x-[-20deg]
+                    bg-white/20 transition-transform duration-500 group-hover:translate-x-[130%]"
+                />
+              )}
+              Start Analysis
+              <ArrowRight className={`h-4 w-4 transition-transform duration-200 ${canAnalyse ? "group-hover:translate-x-1" : ""}`} />
+            </motion.button>
+          </div>
+
+          {/* ── Upload progress hint ── */}
+          <AnimatePresence>
+            {isUploading && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-3 rounded-xl bg-[#0081A7]/6 px-4 py-3">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#0081A7]/15">
+                    <motion.div
+                      className="h-full rounded-full bg-gradient-to-r from-[#0081A7] to-[#00AFB9]"
+                      initial={{ width: "0%" }}
+                      animate={{ width: "85%" }}
+                      transition={{ duration: 2.5, ease: "easeOut" }}
+                    />
+                  </div>
+                  <span className="text-xs font-semibold text-[#0081A7]">Uploading…</span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── Preview Table ── inline, no gap */}
+          <div className="overflow-x-auto rounded-2xl border border-[#0081A7]/12 bg-white/55 backdrop-blur-sm min-h-[140px]">
             {columns.length > 0 ? (
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    {columns.map((column) => {
-                      const sensitive = sensitiveHints.some((hint) => column.toLowerCase().includes(hint))
+                  <TableRow className="border-[#0081A7]/8">
+                    {columns.map((col) => {
+                      const sensitive = sensitiveHints.some((h) => col.toLowerCase().includes(h))
                       return (
-                        <TableHead key={column}>
-                          <span
-                            className={
-                              sensitive
-                                ? "rounded-lg bg-red-50 px-2 py-1 text-xs font-semibold text-red-500"
-                                : "text-[#005f7a]"
-                            }
-                          >
-                            {column}
-                          </span>
+                        <TableHead key={col} className="text-[#005f7a] font-semibold">
+                          {sensitive
+                            ? <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-500">{col}</span>
+                            : col}
                         </TableHead>
                       )
                     })}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewRows.map((row, rowIndex) => (
-                    <TableRow key={rowIndex}>
-                      {columns.map((column) => (
-                        <TableCell key={`${rowIndex}-${column}`} className="text-sm text-[#334155]">
-                          {String((row as Record<string, unknown>)[column])}
+                  {previewRows.map((row, ri) => (
+                    <TableRow key={ri} className="border-[#0081A7]/5 transition-colors hover:bg-[#0081A7]/3">
+                      {columns.map((col) => (
+                        <TableCell key={`${ri}-${col}`} className="text-sm text-[#334155]">
+                          {String((row as Record<string, unknown>)[col])}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -305,13 +365,97 @@ export default function UploadPage() {
                 </TableBody>
               </Table>
             ) : (
-              <div className="flex h-[150px] items-center justify-center">
-                <p className="text-sm text-muted-foreground text-center">Upload a file to see preview.</p>
+              <div className="flex h-[140px] flex-col items-center justify-center gap-1.5">
+                <p className="text-sm text-[#94a3b8]">Upload a file to see a preview.</p>
+                <p className="text-xs text-[#cbd5e1]">Sensitive columns are highlighted in red.</p>
               </div>
             )}
           </div>
-        </div>
-      </motion.div>
+
+        </motion.div>
+
+        {/* ════ RIGHT: Info Panel ════ */}
+        <motion.aside
+          className="flex flex-col gap-6"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.18, duration: 0.65, ease }}
+        >
+          {/* Pipeline steps */}
+          <div className="rounded-2xl border border-[#0081A7]/12 bg-white/45 p-6 backdrop-blur-sm">
+            <p className="mb-5 text-[11px] font-bold uppercase tracking-[0.28em] text-[#00AFB9]">
+              Pipeline Steps
+            </p>
+            <div className="flex flex-col gap-0">
+              {STEPS.map((step, i) => (
+                <div key={step.n} className="flex items-start gap-3">
+                  {/* connector line */}
+                  <div className="flex flex-col items-center">
+                    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold
+                      ${i === 0
+                        ? "bg-[#0081A7] text-white shadow-[0_4px_12px_rgba(0,129,167,0.35)]"
+                        : "border border-[#0081A7]/20 bg-white/60 text-[#0081A7]/50"}`}
+                    >
+                      {i === 0 ? "→" : step.n}
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <div className="my-1 h-6 w-px bg-[#0081A7]/12" />
+                    )}
+                  </div>
+                  <div className="pb-4">
+                    <p className={`text-sm font-semibold ${i === 0 ? "text-[#003d4f]" : "text-[#64748b]"}`}>
+                      {step.label}
+                    </p>
+                    <p className="text-xs text-[#94a3b8]">{step.sub}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Privacy badge */}
+          <div className="rounded-2xl border border-[#00AFB9]/20 bg-gradient-to-br from-[#0081A7]/6 to-[#00AFB9]/4 p-5 backdrop-blur-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0081A7]/12">
+                <Lock className="h-4 w-4 text-[#0081A7]" />
+              </div>
+              <p className="text-sm font-bold text-[#003d4f]">Privacy Guaranteed</p>
+            </div>
+            <ul className="space-y-2">
+              {[
+                "ε-Differential privacy enforced",
+                "Raw data never stored",
+                "HIPAA · GDPR · GLBA ready",
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-2 text-xs text-[#005f7a]/80">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#00AFB9]" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Format support */}
+          <div className="rounded-2xl border border-[#0081A7]/10 bg-white/40 p-5 backdrop-blur-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-[#0081A7]/70" />
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0081A7]/70">
+                Supported Formats
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {["CSV", "Parquet", "Up to 500 MB"].map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-[#0081A7]/18 bg-[#0081A7]/6 px-3 py-1 text-[11px] font-semibold text-[#0081A7]/80"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </motion.aside>
+      </div>
     </main>
   )
 }
