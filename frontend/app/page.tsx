@@ -221,6 +221,17 @@ export default function Home() {
                 >
                   <Link href="/bias-audit">Watch demo</Link>
                 </Button>
+
+                <Button
+                  variant="outline"
+                  asChild
+                  className="rounded-full border-[#00AFB9]/35 bg-white/50 px-8 py-5 text-[0.95rem] font-semibold text-[#00AFB9] backdrop-blur-sm transition-all duration-500 hover:bg-[#00AFB9]/10 hover:text-[#005f7a] hover:-translate-y-1 gap-2"
+                >
+                  <Link href="/cache">
+                    <Database className="h-4 w-4" />
+                    Browse Cache
+                  </Link>
+                </Button>
               </motion.div>
 
               {/* ── Stats ── */}
