@@ -8,7 +8,7 @@ import {
   RefreshCw, Clock, FileText, BarChart3, ExternalLink, SearchX,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
 const API = "http://localhost:8000"
@@ -26,15 +26,6 @@ interface CacheItem {
   rows: number
   columns: number
   downloads: Record<string, string>
-}
-
-function MetricPill({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="flex flex-col items-center rounded-xl bg-white/60 px-3 py-2 shadow-sm backdrop-blur-sm border border-white/40 min-w-[72px]">
-      <span className={`text-base font-bold ${color}`}>{value}</span>
-      <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground leading-tight text-center">{label}</span>
-    </div>
-  )
 }
 
 function QualityBar({ value, color }: { value: number; color: string }) {
@@ -185,7 +176,7 @@ export default function CachePage() {
           <SearchX className="h-10 w-10 text-muted-foreground/50" />
           <p className="text-sm text-muted-foreground">No cached results yet. Run a pipeline to see results here.</p>
           <Button asChild size="sm">
-            <Link href="/upload">Upload & Run</Link>
+            <Link href="/upload">Upload &amp; Run</Link>
           </Button>
         </motion.div>
       ) : (
@@ -262,7 +253,7 @@ export default function CachePage() {
                     )}
 
                     {!isSynth && (
-                      <div className="mb-4 flex items-center gap-2 rounded-xl bg-[#F07167]/8 px-3 py-2 border border-[#F07167]/15">
+                      <div className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2 border border-[#F07167]/20 bg-[#F07167]/5">
                         <Sparkles className="h-4 w-4 text-[#F07167] shrink-0" />
                         <span className="text-xs text-muted-foreground">
                           <span className="font-semibold text-foreground">{item.rows}</span> bias findings recorded
